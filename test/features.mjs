@@ -93,6 +93,24 @@ await page.waitForTimeout(400);
 check(await page.evaluate(() => JSON.parse(localStorage.getItem('fourtis:ledger:v3')).bkAt) > 0, 'backup date is recorded');
 check(!/backup/i.test(await page.locator('#alert').innerText()), 'the notice clears once backed up');
 
+/* hosted as an artifact the page is framed and <a download> is inert, so the
+   viewer has to hand the file over — check we take that path when it exists */
+await page.addInitScript(() => {
+  window.__saved = [];
+  window.claude = { use: n => Promise.resolve(n === 'downloads'
+    ? Object.freeze({ save: r => { window.__saved.push(r.filename); return Promise.resolve({ status: 'saved' }); } })
+    : null) };
+});
+await patch({ demo: false, bkAt: 0 });
+await page.click('#alert [data-bk]');
+await page.waitForTimeout(500);
+const handed = await page.evaluate(() => window.__saved);
+check(handed.length === 1 && /\.json$/.test(handed[0]),
+      `where downloads are blocked, the file is handed to the viewer instead: ${handed.join(',')}`);
+check(/Backup saved/.test(await page.locator('#tMsg').textContent()), 'and it confirms the save');
+await page.addInitScript(() => { delete window.claude; });
+await page.reload({ waitUntil: 'load' }); await unlock(); await page.waitForTimeout(200);
+
 // ══ 3. auto-lock ═════════════════════════════════════════════════════════
 const hide = async () => page.evaluate(() => {
   Object.defineProperty(document, 'visibilityState', { get: () => 'hidden', configurable: true });

@@ -1946,8 +1946,7 @@ document.addEventListener('click',function(e){
   S.bkAt=Date.now();save();render();
   if($('#ovPanel').classList.contains('on'))repaint();
   if(d.bks!==undefined&&shareBackup(bname,body))return;
-  dl(bname,body,'application/json');
-  toast('Backup downloaded · keep it off this phone');
+  dl(bname,body,'application/json','Backup saved · keep it off this phone');
   return;
  }
  if(d.rs!==undefined){$('#rsFile').click();return;}
@@ -2123,10 +2122,29 @@ function shareBackup(name,body){
   return true;
  }catch(e){return false;}
 }
-function dl(name,c,type){
+/* Hosted as a claude.ai artifact, the page is framed and a plain <a download>
+   is inert — the viewer has to hand the file over. Resolve that capability
+   once if it is there; everywhere else (the real deploy, file://) dlCap stays
+   null and the anchor below does the work. */
+var dlCap=null;
+try{
+ if(window.claude&&typeof window.claude.use==='function')
+  window.claude.use('downloads').then(function(d){dlCap=d||null;})['catch'](function(){});
+}catch(e){}
+function dl(name,c,type,okMsg){
+ if(dlCap){
+  dlCap.save({filename:name,data:c}).then(function(){
+   toast(okMsg||'Saved');
+  })['catch'](function(err){
+   var code=err&&err.code;
+   toast(code==='declined'?'Save cancelled':'Could not save the file here \u2014 open Cashfra on your own domain');
+  });
+  return;
+ }
  var b=new Blob([c],{type:type}),u=URL.createObjectURL(b),a=document.createElement('a');
  a.href=u;a.download=name;document.body.appendChild(a);a.click();
  a.parentNode.removeChild(a);setTimeout(function(){URL.revokeObjectURL(u);},800);
+ if(okMsg)toast(okMsg);
 }
 function csv(all){
  var H=['Date','Brand','Type','Category','Package','Chain','Party','Amount','Token','USD rate','USD value','Received USD','Status','Commission to','Commission USD','Commission paid','Announce link','Tx hash','Recurring','Note'];
@@ -2140,7 +2158,7 @@ function csv(all){
    comv(t)?((t.coms||[]).every(function(c){return c.paid||!num(c.usd);})?'Yes':((t.coms||[]).some(function(c){return c.paid;})?'Partial':'No')):'',
    t.link||t.wallet||'',t.hash,t.recur?'Yes':'',t.note].map(q).join(',');
  });
- dl('fourtis-ledger-'+(all?'all':ym())+'.csv','\ufeff'+H.map(q).join(',')+'\n'+rows.join('\n'),'text/csv;charset=utf-8');
+ dl('fourtis-ledger-'+(all?'all':ym())+'.csv','\ufeff'+H.map(q).join(',')+'\n'+rows.join('\n'),'text/csv;charset=utf-8','CSV saved');
  toast(rows.length+(rows.length===1?' row exported':' rows exported'));
 }
 
