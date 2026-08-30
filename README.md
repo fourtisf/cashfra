@@ -23,6 +23,7 @@ documents the data model and the business rules that must not change.
 | `favicon.ico` | Browser tab icon. |
 | `.htaccess` | Apache/Hostinger config: HTTPS redirect, `noindex`, cache rules. |
 | `deploy/vps-setup.sh` | One-command deploy to an Ubuntu VPS, then checks the result. |
+| `deploy/vps-update.sh` | Pull the latest and redeploy, in one command. |
 | `deploy/nginx.conf` | The nginx site it installs (certbot adds TLS to it). |
 | `deploy/upload-ftp.sh` · `.ps1` | The same, for shared hosting with only FTP. |
 | `robots.txt` | Belt and braces on top of the `noindex` header. |
@@ -71,21 +72,50 @@ update.
 
 ### VPS (Ubuntu + nginx) — the main path
 
-Point the domain's A record at the server first. Then, on the server:
+Point the domain's A record at the server first. Then do everything **on the
+server** — pulling from GitHub means there is no file to move from a laptop and
+no second shell to confuse it with.
+
+Once, to give the server read-only access to this repo:
 
 ```sh
-sudo bash deploy/vps-setup.sh
+apt install -y git
+ssh-keygen -t ed25519 -C "cashfra-vps" -f ~/.ssh/cashfra_deploy -N ""
+cat ~/.ssh/cashfra_deploy.pub          # add on GitHub → repo → Settings →
+                                       # Deploy keys → Add (leave write off)
+printf 'Host github-cashfra\n  HostName github.com\n  User git\n  IdentityFile ~/.ssh/cashfra_deploy\n  IdentitiesOnly yes\n' >> ~/.ssh/config
+chmod 600 ~/.ssh/config
+
+git clone --branch <branch> --single-branch \
+  git@github-cashfra:fourtisf/cashfra.git /opt/cashfra
 ```
 
-It installs nginx and certbot if they are missing, refuses to go on when the
-domain does not resolve to this machine, publishes the app to `/var/www/cashfra`
-as `www-data`, installs the site, runs certbot for the certificate and the
-http→https redirect, and then checks what actually landed: HTTPS 200, `no-cache`
-on `sw.js`, the noindex header, and that the build now being served is the one
-just published.
+Then, to deploy:
 
-Re-run it for every update — the previous build is kept at
-`/var/www/cashfra.prev`, so a rollback is one move:
+```sh
+sudo bash /opt/cashfra/deploy/vps-setup.sh
+```
+
+and for every update after that:
+
+```sh
+sudo bash /opt/cashfra/deploy/vps-update.sh
+```
+
+A deploy key is read-only and scoped to this one repository, and nothing secret
+is ever typed into the shell — unlike a token in the clone URL, which lands in
+`.git/config` and in shell history.
+
+The cache name is bumped **in the repo and committed**, never on the server:
+bumping there would dirty the checkout and block the next fast-forward pull.
+
+`vps-setup.sh` installs nginx and certbot if they are missing, refuses to
+continue when something other than nginx holds port 80 or when the domain does
+not resolve to this machine, publishes to `/var/www/cashfra` as `www-data`,
+installs the site, runs certbot, and then checks what actually landed.
+
+The previous build is kept at `/var/www/cashfra.prev`, so a rollback is one
+move:
 
 ```sh
 sudo rm -rf /var/www/cashfra && sudo mv /var/www/cashfra.prev /var/www/cashfra
