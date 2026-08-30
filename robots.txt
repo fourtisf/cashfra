@@ -1,0 +1,3 @@
+# Cashfra is a private ledger. Nothing here is for indexing.
+User-agent: *
+Disallow: /
