@@ -25,7 +25,7 @@ echo "==> Cashfra build $BUILD -> https://$DOMAIN"
 
 # ── is port 80 free, or nginx's? ────────────────────────────────────────────
 if command -v ss >/dev/null; then
-  holder=$(ss -tlnp 2>/dev/null | awk '$4 ~ /:80$/ {print; exit}')
+  holder=$(ss -tlnp 2>/dev/null | awk '$4 ~ /:80$/ {print; exit}' || true)
   if [ -n "$holder" ] && ! printf '%s' "$holder" | grep -q nginx; then
     echo "!!  something other than nginx already listens on port 80:"
     echo "    $holder"

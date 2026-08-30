@@ -25,8 +25,15 @@ grep -q "Host $ALIAS" "$HOME/.ssh/config" 2>/dev/null || \
 chmod 600 "$HOME/.ssh/config"
 
 github_knows_us() {
-  ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -T "git@$ALIAS" 2>&1 |
-    grep -q 'successfully authenticated'
+  # `ssh -T` to GitHub exits 1 even when the key is accepted — it authenticates
+  # and then refuses shell access. Under `set -o pipefail` that exit code wins
+  # over a matching grep, so the answer must come from the text, not the status.
+  local out
+  out=$(ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -T "git@$ALIAS" 2>&1 || true)
+  case "$out" in
+    *'successfully authenticated'*) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 # The one step that cannot be automated: the key has to be pasted into GitHub.
