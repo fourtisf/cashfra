@@ -23,6 +23,7 @@ documents the data model and the business rules that must not change.
 | `favicon.ico` | Browser tab icon. |
 | `.htaccess` | Apache/Hostinger config: HTTPS redirect, `noindex`, cache rules. |
 | `deploy/nginx.conf` | The same rules as an nginx server block, for a VPS. |
+| `deploy/upload-ftp.sh` · `.ps1` | One-command deploy to Hostinger, then checks the result. |
 | `robots.txt` | Belt and braces on top of the `noindex` header. |
 | `bump-version.sh` | Bumps the service-worker cache name. Run before each deploy. |
 | `dev-server.py` | Local server that sends the production headers. |
@@ -35,16 +36,37 @@ crisp at size. The UI itself is untouched.
 
 ## Deploy
 
-### Hostinger (shared hosting)
+### Hostinger — cashfra.com
 
-1. Create the subdomain, e.g. `cashfra.fourtis.io`, and issue the free SSL cert
-   for it in hPanel. **HTTPS is not optional** — a service worker will not
-   register over plain http.
-2. `./bump-version.sh`
-3. Upload to the subdomain's `public_html`: `index.html`, `manifest.json`,
-   `sw.js`, `favicon.ico`, `robots.txt`, `.htaccess`, `icons/`. Nothing else
-   belongs on the server; `.htaccess` blocks the rest if it ends up there.
-4. Open the subdomain and walk the checklist under *Verify* below.
+In hPanel first, once: attach `cashfra.com` to the hosting plan, then
+**Security → SSL** and issue the free certificate. **HTTPS is not optional** —
+a service worker will not register over plain http. Collect the FTP host and
+username from **Files → FTP Accounts**.
+
+Then, from the folder holding `index.html`:
+
+```sh
+./bump-version.sh
+./deploy/upload-ftp.sh <ftp-host> <ftp-user>          # bash / WSL / Git Bash / macOS
+```
+
+```powershell
+# Windows PowerShell — curl.exe ships with Windows 10 and 11
+powershell -ExecutionPolicy Bypass -File deploy\upload-ftp.ps1 `
+  -FtpHost <ftp-host> -User <ftp-user>
+```
+
+Both upload an explicit list — `index.html`, `manifest.json`, `sw.js`,
+`favicon.ico`, `robots.txt`, `.htaccess`, `icons/` — so running them from the
+repo root never pushes `README.md`, `test/` or `.git` to the site. Both refuse
+to waste a deploy on an unbumped cache name, and both check the result
+afterwards: HTTPS 200, the `no-cache` header on `sw.js`, the noindex header,
+and that the new build is really the one being served.
+
+Uploading by hand instead? Same file list into `public_html`, and turn on
+"show hidden files" in File Manager or `.htaccess` will be silently left
+behind — which costs you the `no-cache` header, and with it every future
+update.
 
 ### VPS (nginx)
 
@@ -57,7 +79,7 @@ sudo cp deploy/nginx.conf /etc/nginx/sites-available/cashfra
 # edit server_name + cert paths, then:
 sudo ln -sf /etc/nginx/sites-available/cashfra /etc/nginx/sites-enabled/cashfra
 sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d cashfra.example.com
+sudo certbot --nginx -d cashfra.com -d www.cashfra.com
 ```
 
 ### Redeploying
@@ -79,7 +101,7 @@ build. `test/update.mjs` checks exactly this.
 
 ## Verify after deploy
 
-- [ ] `https://…/` loads and PIN **162007** opens it — then change the code in
+- [ ] `https://cashfra.com/` loads and PIN **162007** opens it — then change the code in
       Settings → App lock.
 - [ ] The app opens on a seeded demo ledger. Once real bookkeeping starts, clear
       it with *Clear and start fresh* on the sample-entries banner (or Your data
@@ -91,8 +113,9 @@ build. `test/update.mjs` checks exactly this.
 - [ ] Airplane mode, then relaunch from the home screen — the app opens and all
       data is there.
 - [ ] Log an entry, force-quit, reopen — the entry is still there.
-- [ ] `curl -sI https://…/ | grep -i x-robots-tag` returns the noindex header.
-- [ ] `curl -sI https://…/sw.js | grep -i cache-control` says `no-cache`.
+- [ ] `curl -sI https://cashfra.com/ | grep -i x-robots-tag` returns the noindex header.
+- [ ] `curl -sI https://cashfra.com/sw.js | grep -i cache-control` says `no-cache`.
+      (the deploy scripts check both for you)
 
 ## Data
 
