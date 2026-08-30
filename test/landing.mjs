@@ -28,9 +28,16 @@ const scroll=await d.evaluate(()=>({body:getComputedStyle(document.body).overflo
 check(scroll.body==='hidden'&&!scroll.scrollable,`no stray scrollbar behind the lock (overflow ${scroll.body})`);
 
 const card=await d.evaluate(()=>{const g=getComputedStyle(document.querySelector('.gwrap'));
-  return{bg:g.backgroundColor,radius:g.borderRadius,shadow:g.boxShadow!=='none'};});
-check(card.bg!=='rgba(0, 0, 0, 0)'&&card.shadow,`the wrap becomes a real card on desktop (${card.bg})`);
+  return{img:g.backgroundImage,shadow:g.boxShadow};});
+/* a lit object, not a flat panel: a gradient face and an inset top highlight */
+check(card.img!=='none'&&/inset/.test(card.shadow),'the wrap is a lit card on desktop');
 check(await d.locator('#gHint').isVisible(),`and says how to use a keyboard: "${(await d.locator('#gHint').textContent()).trim()}"`);
+check(await d.locator('.gtag').isVisible(),`the wordmark carries its descriptor: "${(await d.locator('.gtag').textContent()).trim()}"`);
+/* the spacer key sits under 0 — any decoration added to .gk must not reach it */
+const ghost=await d.evaluate(()=>{const g=getComputedStyle(document.querySelector('.gk.ghost'));
+  return{border:g.borderTopWidth,shadow:g.boxShadow,bg:g.backgroundColor};});
+check(ghost.border==='0px'&&ghost.shadow==='none'&&ghost.bg==='rgba(0, 0, 0, 0)',
+      `the keypad spacer stays invisible (border ${ghost.border}, shadow ${ghost.shadow})`);
 await d.screenshot({path:join(SB,'cashfra-gate-desktop.png')});
 
 // the whole point: typing the code must work
@@ -43,6 +50,18 @@ await d.waitForFunction(()=>!document.getElementById('gate').classList.contains(
 check(true,'the code can be entered entirely from the keyboard');
 check(await d.evaluate(()=>getComputedStyle(document.body).overflow!=='hidden'),'and the page scrolls again once unlocked');
 await d.screenshot({path:join(SB,'cashfra-app-desktop.png')});
+
+// ── motion is an enhancement, never a requirement ────────────────────────
+const rctx = await b.newContext({ viewport:{width:1440,height:900}, reducedMotion:'reduce' });
+await stubFeed(rctx);
+const r = await rctx.newPage();
+await r.goto(BASE,{waitUntil:'load'});
+await r.waitForSelector('#gate.on');
+const anim = await r.evaluate(()=>[...document.querySelectorAll('.gwrap,.glogo,.gpad')]
+  .map(e=>getComputedStyle(e).animationName));
+check(anim.every(a=>a==='none'), `reduced motion turns the entrance off (${anim.join(',')})`);
+check(await r.locator('.gwrap').isVisible(), 'and the card is still there, not stuck invisible');
+await rctx.close();
 
 // ── phone: nothing about the approved design may move ────────────────────
 const mctx=await b.newContext({...devices['Pixel 7']});

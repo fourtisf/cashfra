@@ -176,7 +176,7 @@ Opening `index.html` over `file://` still works — the app falls back to
 
 ## Tests
 
-Six Playwright suites, 150 checks. They are for this repo only and never ship
+Six Playwright suites, 154 checks. They are for this repo only and never ship
 to the server. The price feed is always stubbed, so the suites are hermetic.
 
 ```sh
@@ -221,11 +221,12 @@ are viewing one, and a client's headline number is net of commission. It also
 reads the *painted* colour of each delta, not the class name — a more specific
 rule further down the stylesheet had quietly greyed all of them out.
 
-`landing.mjs` (11 checks) covers the lock screen — the page the domain
+`landing.mjs` (15 checks) covers the lock screen — the page the domain
 actually opens on — at 1440px and on a phone at once: the card treatment and
 keyboard hint appear on the desktop, the code goes in from the keyboard, no
-scrollbar sits behind the lock, and the approved phone layout is byte-for-byte
-unmoved by any of it.
+scrollbar sits behind the lock, the keypad's invisible spacer key stays
+invisible, motion is off under `prefers-reduced-motion` without leaving the
+card hidden, and the approved phone layout is unmoved by any of it.
 
 `update.mjs` (7 checks) ships a second build mid-run and verifies the handover
 described under *Redeploying*.

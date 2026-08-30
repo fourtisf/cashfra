@@ -398,24 +398,71 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
    phones hide the bar, a desktop leaves a dead scrollbar down the side */
 body.locked{overflow:hidden}
 .ghint{margin-top:14px;font-size:12px;color:rgba(255,255,255,.6);font-weight:600;display:none}
+.gtag{display:none}
 @media (min-width:720px){
-  /* the ambient light was sized for a phone; on a desktop it has to grow with
-     the canvas or it reads as two smudges in the corners */
-  .gate::before{width:1000px;height:1000px;right:-300px;top:-420px}
-  .gate::after{width:900px;height:900px;left:-340px;bottom:-440px}
-  .gwrap{max-width:372px;padding:36px 32px 30px;border-radius:32px;
-    background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);
-    box-shadow:0 30px 80px rgba(18,8,70,.32);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
-  .glogo{width:64px;height:64px;border-radius:21px;font-size:32px;margin-bottom:16px}
-  .gwrap h1{font-size:23px}
-  .gpad{margin-top:20px}
+  /* A lock screen is the only room in this app, so give it depth: the field
+     drops away into the brand's darkest violet, one light falls from the upper
+     left, and the card is the lit object. Card and ground sat at nearly the
+     same value before, which is exactly what made it read flat. */
+  .gate{background:
+    radial-gradient(58% 46% at 24% 6%, rgba(255,255,255,.22), transparent 62%),
+    radial-gradient(70% 60% at 88% 100%, rgba(18,7,72,.62), transparent 66%),
+    linear-gradient(152deg,#6A5BFF 0%,#5B4FE9 30%,#4030C6 66%,#2A1E8F 100%)}
+  .gate::before{width:1180px;height:1180px;right:auto;left:-380px;top:-560px;
+    background:radial-gradient(circle,rgba(255,255,255,.16),transparent 62%)}
+  /* fine grain, so the field reads as a material rather than a fill */
+  .gate::after{width:100%;height:100%;left:0;top:0;bottom:auto;border-radius:0;z-index:0;opacity:.4;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    mix-blend-mode:overlay}
+
+  .gwrap{z-index:1;max-width:394px;padding:44px 38px 32px;border-radius:30px;
+    background:linear-gradient(180deg,rgba(255,255,255,.17),rgba(255,255,255,.065));
+    border:1px solid rgba(255,255,255,.15);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.34),
+               0 44px 90px -22px rgba(9,3,46,.62),
+               0 3px 10px rgba(9,3,46,.28);
+    backdrop-filter:blur(22px) saturate(125%);-webkit-backdrop-filter:blur(22px) saturate(125%)}
+
+  .glogo{width:70px;height:70px;border-radius:23px;font-size:34px;margin-bottom:18px;
+    background:linear-gradient(180deg,#fff 0%,#EDE9FF 100%);
+    box-shadow:0 14px 32px rgba(9,3,46,.42),0 0 0 1px rgba(255,255,255,.2)}
+  .gwrap h1{font-size:30px;letter-spacing:-.022em}
+  .gtag{display:block;margin-top:8px;font-size:10.5px;font-weight:700;
+    letter-spacing:.24em;text-transform:uppercase;color:rgba(255,255,255,.5)}
+  .gsub{margin-top:16px;font-size:13.5px;opacity:.72}
+
+  .gdots{gap:17px;margin:26px 0 2px}
+  .gd{width:13px;height:13px;background:rgba(255,255,255,.17);
+    border:1px solid rgba(255,255,255,.26);transition:transform .18s,background .18s,box-shadow .18s}
+  .gd.f{background:#fff;border-color:#fff;transform:scale(1.06);box-shadow:0 0 16px rgba(255,255,255,.6)}
+
+  .gpad{margin-top:22px}
+  .gk{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.19);
+    font-weight:500;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+  .gk.ghost{box-shadow:none}   /* the spacer key must stay invisible */
+  .gbtn{border-radius:16px;padding:14px;box-shadow:0 12px 30px rgba(9,3,46,.42)}
   .ghint{display:block}
-  .gnote{margin-top:22px}
+  .gnote{margin-top:24px;letter-spacing:.01em}
+
+  /* one entrance, staggered — not five effects competing */
+  @keyframes rise{from{opacity:0;transform:translateY(15px)}to{opacity:1;transform:none}}
+  .gwrap{animation:rise .55s cubic-bezier(.22,.9,.28,1) both}
+  .glogo{animation:rise .55s .05s cubic-bezier(.22,.9,.28,1) both}
+  .gwrap h1{animation:rise .55s .1s cubic-bezier(.22,.9,.28,1) both}
+  .gtag{animation:rise .55s .15s cubic-bezier(.22,.9,.28,1) both}
+  .gsub{animation:rise .55s .2s cubic-bezier(.22,.9,.28,1) both}
+  .gdots,.gin{animation:rise .55s .25s cubic-bezier(.22,.9,.28,1) both}
+  .gpad,.gbtn{animation:rise .55s .3s cubic-bezier(.22,.9,.28,1) both}
 }
 @media (min-width:720px) and (hover:hover){
-  .gk{transition:background .13s,transform .13s}
-  .gk:hover{background:rgba(255,255,255,.24)}
-  .gbtn:hover{box-shadow:0 10px 26px rgba(20,10,80,.38)}
+  .gk{transition:background .15s,border-color .15s,transform .15s}
+  .gk:hover{background:rgba(255,255,255,.17);border-color:rgba(255,255,255,.36)}
+  .gbtn{transition:box-shadow .15s,transform .15s}
+  .gbtn:hover{box-shadow:0 16px 38px rgba(9,3,46,.5);transform:translateY(-1px)}
+  .glink:hover{color:#fff}
+}
+@media (prefers-reduced-motion:reduce){
+  .gate *{animation:none!important}
 }
 @media(max-height:660px){
  .glogo{width:48px;height:48px;font-size:24px;border-radius:16px;margin-bottom:10px}
@@ -596,6 +643,7 @@ body.locked{overflow:hidden}
   <div class="gwrap">
     <div class="glogo">C</div>
     <h1>Cashfra</h1>
+    <div class="gtag">Private ledger</div>
     <p class="gsub" id="gSub">Enter your access code</p>
     <div class="gdots hide" id="gDots"></div>
     <input type="password" id="g1" class="gin" placeholder="Access code" autocomplete="off">
