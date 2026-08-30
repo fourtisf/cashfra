@@ -22,8 +22,9 @@ documents the data model and the business rules that must not change.
 | `icons/` | 192 and 512 icons, `maskable` variants for Android's adaptive shapes, and the 180px apple-touch-icon. |
 | `favicon.ico` | Browser tab icon. |
 | `.htaccess` | Apache/Hostinger config: HTTPS redirect, `noindex`, cache rules. |
-| `deploy/nginx.conf` | The same rules as an nginx server block, for a VPS. |
-| `deploy/upload-ftp.sh` · `.ps1` | One-command deploy to Hostinger, then checks the result. |
+| `deploy/vps-setup.sh` | One-command deploy to an Ubuntu VPS, then checks the result. |
+| `deploy/nginx.conf` | The nginx site it installs (certbot adds TLS to it). |
+| `deploy/upload-ftp.sh` · `.ps1` | The same, for shared hosting with only FTP. |
 | `robots.txt` | Belt and braces on top of the `noindex` header. |
 | `bump-version.sh` | Bumps the service-worker cache name. Run before each deploy. |
 | `dev-server.py` | Local server that sends the production headers. |
@@ -68,19 +69,30 @@ Uploading by hand instead? Same file list into `public_html`, and turn on
 behind — which costs you the `no-cache` header, and with it every future
 update.
 
-### VPS (nginx)
+### VPS (Ubuntu + nginx) — the main path
+
+Point the domain's A record at the server first. Then, on the server:
 
 ```sh
-sudo mkdir -p /var/www/cashfra
-sudo rsync -av --delete \
-  index.html manifest.json sw.js favicon.ico robots.txt icons/ \
-  /var/www/cashfra/
-sudo cp deploy/nginx.conf /etc/nginx/sites-available/cashfra
-# edit server_name + cert paths, then:
-sudo ln -sf /etc/nginx/sites-available/cashfra /etc/nginx/sites-enabled/cashfra
-sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d cashfra.com -d www.cashfra.com
+sudo bash deploy/vps-setup.sh
 ```
+
+It installs nginx and certbot if they are missing, refuses to go on when the
+domain does not resolve to this machine, publishes the app to `/var/www/cashfra`
+as `www-data`, installs the site, runs certbot for the certificate and the
+http→https redirect, and then checks what actually landed: HTTPS 200, `no-cache`
+on `sw.js`, the noindex header, and that the build now being served is the one
+just published.
+
+Re-run it for every update — the previous build is kept at
+`/var/www/cashfra.prev`, so a rollback is one move:
+
+```sh
+sudo rm -rf /var/www/cashfra && sudo mv /var/www/cashfra.prev /var/www/cashfra
+sudo systemctl reload nginx
+```
+
+Only the app is published: no `.md`, no `deploy/`, no `test/`, no `.git`.
 
 ### Redeploying
 
