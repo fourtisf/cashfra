@@ -23,6 +23,18 @@ done
 BUILD=$(sed -n "s/^var BUILD = '\(.*\)';$/\1/p" "$SRC/sw.js")
 echo "==> Cashfra build $BUILD -> https://$DOMAIN"
 
+# ── is port 80 free, or nginx's? ────────────────────────────────────────────
+if command -v ss >/dev/null; then
+  holder=$(ss -tlnp 2>/dev/null | awk '$4 ~ /:80$/ {print; exit}')
+  if [ -n "$holder" ] && ! printf '%s' "$holder" | grep -q nginx; then
+    echo "!!  something other than nginx already listens on port 80:"
+    echo "    $holder"
+    echo "    nginx cannot start behind it. Stop that service, or put cashfra.com"
+    echo "    behind whatever is already there, and run this again."
+    exit 1
+  fi
+fi
+
 # ── packages ────────────────────────────────────────────────────────────────
 if ! command -v nginx >/dev/null || ! command -v certbot >/dev/null; then
   echo "==> installing nginx + certbot"
@@ -95,4 +107,7 @@ say "noindex"     "$(curl -sSI --max-time 15 "https://$DOMAIN/" 2>/dev/null | gr
 say "build live"  "$(curl -sS --max-time 15 "https://$DOMAIN/sw.js" 2>/dev/null | grep -q "var BUILD = '$BUILD';" && echo "$BUILD  ok" || echo 'old build still served')"
 echo
 echo "    Open https://$DOMAIN/ and unlock with 162007, then change the code in Settings."
-echo "    Rollback if needed:  rm -rf $ROOT && mv $ROOT.prev $ROOT && systemctl reload nginx"
+if [ -d "$ROOT.prev" ]; then
+  echo "    Rollback to the previous build:"
+  echo "      rm -rf $ROOT && mv $ROOT.prev $ROOT && systemctl reload nginx"
+fi
