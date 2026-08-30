@@ -8,6 +8,7 @@
     "rates": "node rates.mjs",
     "features": "node features.mjs",
     "analytics": "node analytics.mjs",
+    "landing": "node landing.mjs",
     "deploy": "node update.mjs"
   },
   "devDependencies": {
