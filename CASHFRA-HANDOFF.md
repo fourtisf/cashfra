@@ -43,6 +43,7 @@ S = {
   rateAuto:true, rateAt:0,                 // live prices: on/off + last check (ms)
   bkAt:0,                                  // last backup taken (ms) — drives the reminder
   goal:0,                                  // monthly money-in target, 0 = card hidden
+  caps:[['Tip shiller',5],...],            // spending ceiling per category, % of money in
   lockIdle:300,                            // seconds away before the code is asked again; -1 = never
   contacts:{ '$SOLCAT':'@handle' },        // keyed by client name, beside the ledger
   wallets:[['SOL','addr'],...], invNote:'',// invoice: where they pay, and the terms line
@@ -79,7 +80,7 @@ These rules encode how ALFA runs his books. Breaking any of them silently corrup
 
 ## Feature inventory (regression checklist)
 
-PIN gate (setup/lock/change/forgot, auto-lock on leaving with a grace period) · brand switcher + inline "New brand" · M/W toggle with 12-bucket strip, ‹›/arrow-key nav, jump-to-period · animated net + growth pills + streak · delta lines on chips · notices (receivables filter, recurring one-tap log w/ undo) · entry form (brand chips, package chips, centered amount w/ "2.5 bnb" parsing, token pills, auto-rate, chain pills, Team-bonus % quick calc, multi-recipient commission with owed-hint "use this amount", announcement link with Open ↗, status/partial, recurring switch) · edit/delete+undo/duplicate/save-&-add-more · search + filters · Commission panel (netted book, per-person Mark-all-paid, per-recipient per-deal toggles, payouts list) · Insights (composition bars, **package & chain mix donuts** with a this-period/all-time toggle, package profitability + margin, cost ratio vs prev, avg deal, run-rate) · Clients · recap ✨ stories · CSV month/all (20 cols incl. Brand, Announce link) · JSON backup/restore + overdue reminder + OS share · invoice/quotation sheet (copy text, print to PDF) · client contacts · monthly target card · demo seed + wipe w/ undo · keyboard: n, /, Enter, Esc, arrows.
+PIN gate (setup/lock/change/forgot, auto-lock on leaving with a grace period) · brand switcher + inline "New brand" · M/W toggle with 12-bucket strip, ‹›/arrow-key nav, jump-to-period · animated net + growth pills + streak · delta lines on chips · notices (receivables filter, recurring one-tap log w/ undo) · entry form (brand chips, package chips, centered amount w/ "2.5 bnb" parsing, token pills, auto-rate, chain pills, Team-bonus % quick calc, multi-recipient commission with owed-hint "use this amount", announcement link with Open ↗, status/partial, recurring switch) · edit/delete+undo/duplicate/save-&-add-more · search + filters · Commission panel (netted book, per-person Mark-all-paid, per-recipient per-deal toggles, payouts list) · Insights (composition bars with a %-of-spend / %-of-money-in toggle, spending caps vs actual, **period-vs-period comparison** per category with 6-period sparklines, **brand vs brand** table, package & chain mix donuts with a this-period/all-time toggle, package profitability + margin, cost ratio vs prev, avg deal, run-rate) · Clients (net of commission, repeat rate, contacts) · recap ✨ stories · CSV month/all (20 cols incl. Brand, Announce link) · JSON backup/restore + overdue reminder + OS share · invoice/quotation sheet (copy text, print to PDF) · client contacts · monthly target card · demo seed + wipe w/ undo · keyboard: n, /, Enter, Esc, arrows.
 
 If you refactor, walk this list on mobile viewport before shipping.
 
@@ -88,6 +89,9 @@ If you refactor, walk this list on mobile viewport before shipping.
 - claude.ai storage and standalone localStorage are **separate stores**; migration is manual via Backup/Restore JSON.
 - Run-rate is a linear projection; noisy early in a period.
 - The monthly target is one global number, not per brand, and only shows in month view.
+- Spending caps match on the exact category name; a typo silently never matches.
+- The brand table deliberately ignores `brandView` — comparing brands is the whole point of it.
+- Comparison rows bucket by category, and take commission from `totals().gc` so the netting rule in business rule 4 stays the single source of truth for it.
 - Client contacts are keyed by the client's name: rename a client and the contact does not follow.
 - Leaving the app always covers the screen (so the Android app-switcher snapshot is safe); `lockIdle` only decides whether the code is asked for again on return.
 - Live prices come from CoinGecko's free endpoint, at most once every 30 min, and fail silently when offline — the last known prices stay. Only symbols in the `COINS` map are looked up; anything else stays manual.

@@ -176,7 +176,7 @@ Opening `index.html` over `file://` still works — the app falls back to
 
 ## Tests
 
-Four Playwright suites, 107 checks. They are for this repo only and never ship
+Five Playwright suites, 139 checks. They are for this repo only and never ship
 to the server. The price feed is always stubbed, so the suites are hermetic.
 
 ```sh
@@ -186,6 +186,7 @@ python3 dev-server.py 8123 &            # all but the deploy suite need a server
 BASE=http://127.0.0.1:8123/ node test/smoke.mjs
 BASE=http://127.0.0.1:8123/ node test/rates.mjs
 BASE=http://127.0.0.1:8123/ node test/features.mjs
+BASE=http://127.0.0.1:8123/ node test/analytics.mjs
 
 node test/update.mjs                    # starts and tears down its own server
 ```
@@ -209,6 +210,15 @@ client contacts and their Telegram/X links, the monthly target card, and the
 invoice sheet — including that an unpaid deal reads as a *Quotation*, that the
 wallet matched to the deal's chain appears, and that the copied text is
 pasteable into a chat.
+
+`analytics.mjs` (30 checks) covers the comparison and allocation views, and
+checks the arithmetic against the ledger rather than just that a section
+appeared: money in matches, the cost bars total the real cost ratio when
+switched to share-of-income, a cap is measured against money in and flagged
+when breached, the brand table shows the other brand's own figures while you
+are viewing one, and a client's headline number is net of commission. It also
+reads the *painted* colour of each delta, not the class name — a more specific
+rule further down the stylesheet had quietly greyed all of them out.
 
 `update.mjs` (7 checks) ships a second build mid-run and verifies the handover
 described under *Redeploying*.

@@ -263,6 +263,33 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .ctc input:focus{outline:none;background:var(--card);box-shadow:inset 0 0 0 1.5px var(--brand)}
 .clnk{font-size:12px;font-weight:700;color:var(--brand-ink);background:var(--brand-soft);border-radius:999px;padding:6px 11px;text-decoration:none;white-space:nowrap}
 
+/* ── comparison ── */
+.cmp{display:flex;align-items:center;gap:10px;padding:9px 2px;position:relative}
+.cmp+.cmp::before{content:"";position:absolute;top:0;left:2px;right:2px;height:1px;background:var(--line)}
+.cmp .ic2{width:26px;height:26px;border-radius:9px;display:grid;place-items:center;font-size:14px;flex:none;background:#F1F1F6}
+.cmp .cn{flex:1;min-width:0}
+.cmp .cn b{font-size:13.5px;font-weight:700;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmp .cn .s{font-size:11.5px;color:var(--faint);font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums}
+.cmp .cd{font-family:var(--disp);font-weight:800;font-size:14px;flex:none;font-variant-numeric:tabular-nums;color:var(--faint)}
+.cmp .cd.pos{color:var(--in)} .cmp .cd.neg{color:var(--out)}
+.cmp .spk{flex:none;opacity:.9}
+.tot3{display:flex;gap:8px;margin-bottom:6px}
+.tot3 div{flex:1;background:#F7F7FB;border-radius:14px;padding:10px 11px;min-width:0}
+.tot3 .t{font-size:11px;color:var(--faint);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.tot3 .v{font-family:var(--disp);font-weight:800;font-size:15px;margin-top:3px;font-variant-numeric:tabular-nums}
+.tot3 .d{font-size:11.5px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+.tbl{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -2px}
+.tbl table{border-collapse:collapse;width:100%;font-size:13.5px;font-variant-numeric:tabular-nums}
+.tbl th,.tbl td{padding:9px 10px;text-align:right;white-space:nowrap;border-top:1px solid var(--line)}
+.tbl thead th{border-top:none;font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;font-weight:800}
+.tbl th:first-child,.tbl td:first-child{text-align:left;color:var(--sub);font-weight:600;position:sticky;left:0;background:var(--card)}
+.tbl td{font-weight:700}
+.tbl tr.hi td{font-family:var(--disp);font-weight:800;font-size:14.5px}
+.cap{padding:9px 2px}
+.cap .l{display:flex;justify-content:space-between;gap:10px;font-size:13.5px}
+.cap .l b{font-weight:700}
+.cap .l .r2{font-weight:800;font-variant-numeric:tabular-nums;flex:none;font-family:var(--disp)}
+
 /* ── invoice / quotation ── */
 .inv{font-size:13.5px;line-height:1.6}
 .inv .ihd{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding-bottom:14px;border-bottom:2px solid var(--ink)}
@@ -628,12 +655,12 @@ var DEF={v:3,tx:[],
  brands:['Fourtis','Dexvra'],
  brand:'Fourtis',
  idr:16300, last:{tok:'SOL',ch:'SOL'}, demo:false, recSkip:'', lockHash:'', lockSalt:'', lockLen:0, lockNum:true, lockPreset:'',
- rateAuto:true, rateAt:0, bkAt:0, goal:0, lockIdle:300, contacts:{},
+ rateAuto:true, rateAt:0, bkAt:0, goal:0, lockIdle:300, contacts:{}, caps:[],
  wallets:[['SOL',''],['BSC',''],['ETH',''],['BASE',''],['TRON','']], invNote:''
 };
 var S=clone(DEF);
 var anchor=new Date(), flt='', editId=null, fType='in', fTokV='SOL', fChainV='SOL', fBrandV='', brandView='', formPkg='', panel='menu', undoBuf=null;
-var mixAll=false, ratePrefill='', rateBusy=false, hidAt=0, autoLocked=false;
+var mixAll=false, ratePrefill='', rateBusy=false, hidAt=0, autoLocked=false, costOf='spend';
 
 function clone(o){return JSON.parse(JSON.stringify(o));}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
@@ -1553,6 +1580,116 @@ function panelHtml(){
   mi('\ud83d\uddc2\ufe0f','#E2F6F2','Your data',S.tx.length+' entries \u00b7 CSV \u00b7 backup','data')+
   '</div>';
 }
+/* One bucket per category, on the same terms the rest of the app uses:
+   income counts what was received, spending counts what was booked, and
+   commission comes from totals() so the netting rule stays the one rule. */
+function catBuckets(L){
+ var m={};
+ L.forEach(function(t){
+  var k=t.cat,v;
+  if(t.type==='in'){v=recv(t);if(v<=0)return;if(!m[k])m[k]={v:0,kind:'in'};}
+  else{
+   if(t.cat==='Team commission')return;   /* settles an accrual, never a new cost */
+   v=num(t.usd);if(v<=0)return;
+   if(!m[k])m[k]={v:0,kind:'out'};
+  }
+  m[k].v+=v;
+ });
+ var gc=totals(L).gc;
+ if(gc>0)m['Team commission']={v:gc,kind:'out'};
+ return m;
+}
+function spark(vals,down){
+ var w=52,h=18,mx=0,i;
+ for(i=0;i<vals.length;i++)if(vals[i]>mx)mx=vals[i];
+ if(mx<=0||vals.length<2)return'<span class="spk" style="width:52px"></span>';
+ var col=down?'var(--out)':'var(--in)',pts=[],lx=0,ly=0;
+ for(i=0;i<vals.length;i++){
+  lx=1+i/(vals.length-1)*(w-2);
+  ly=h-2-(vals[i]/mx)*(h-4);
+  pts.push(lx.toFixed(1)+','+ly.toFixed(1));
+ }
+ return'<svg class="spk" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" aria-hidden="true">'+
+  '<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+col+'" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" opacity=".5"/>'+
+  '<circle cx="'+lx.toFixed(1)+'" cy="'+ly.toFixed(1)+'" r="2.3" fill="'+col+'"/></svg>';
+}
+function cmpSec(){
+ var N=6,frames=[],i;
+ for(i=N-1;i>=0;i--)frames.push(catBuckets(periodTx(-i)));
+ var now=frames[N-1],prev=frames[N-2],keys={};
+ Object.keys(now).forEach(function(k){keys[k]=1;});
+ Object.keys(prev).forEach(function(k){keys[k]=1;});
+ var rows=Object.keys(keys).map(function(k){
+  var a=(now[k]||{}).v||0,b=(prev[k]||{}).v||0;
+  return{k:k,now:a,prev:b,d:a-b,kind:(now[k]||prev[k]).kind,
+   ser:frames.map(function(f){return (f[k]||{v:0}).v;})};
+ }).sort(function(x,y){return Math.abs(y.d)-Math.abs(x.d);});
+ if(!rows.length)return'';
+ var T=totals(periodTx(0)),P=totals(periodTx(-1));
+ function stat(t,a,b,down){
+  var d=a-b,cls=d===0?'':((down?d<0:d>0)?'pos':'neg');
+  return'<div><div class="t">'+esc(t)+'</div><div class="v">'+usdc(a)+'</div>'+
+   '<div class="d '+cls+'">'+(d?(d>0?'+':'')+usdc(d):'no change')+'</div></div>';
+ }
+ return'<div class="sec"><h3>'+esc(perLabel(0))+' vs '+esc(perLabel(-1))+'</h3>'+
+  '<p class="tiny">What actually moved, biggest change first. The line is the last '+N+' '+(per==='w'?'weeks':'months')+'.</p>'+
+  '<div class="tot3">'+stat('Money in',T.gi,P.gi,false)+stat('Money out',T.go+T.gc,P.go+P.gc,true)+stat('Net',T.net,P.net,false)+'</div>'+
+  rows.map(function(r){
+   var bad=(r.kind==='in')?(r.d<0):(r.d>0);
+   var cls=r.d===0?'':(bad?'neg':'pos');
+   return'<div class="cmp"><span class="ic2">'+cmeta(r.k)[0]+'</span>'+
+    '<span class="cn"><b>'+esc(r.k)+'</b><div class="s">'+usdc(r.prev)+' → '+usdc(r.now)+'</div></span>'+
+    spark(r.ser,r.kind==='out')+
+    '<span class="cd '+cls+'">'+(r.d?((r.d>0?'+':'')+usdc(r.d)):'—')+'</span></div>';
+  }).join('')+'</div>';
+}
+function brandSec(){
+ var bs=S.brands.filter(function(b){return b;});
+ if(bs.length<2)return'';
+ var r=perRange(0);
+ var cols=bs.map(function(b){
+  var L=S.tx.filter(function(t){return t.brand===b&&inRange(t,r);});
+  var T=totals(L);
+  return{b:b,T:T,avg:T.ni?T.gi/T.ni:0,mg:T.gi?Math.round(T.net/T.gi*100):0};
+ });
+ if(!cols.some(function(c){return c.T.ni||c.T.no;}))return'';
+ function row(label,f,hi){
+  return'<tr'+(hi?' class="hi"':'')+'><th>'+esc(label)+'</th>'+
+   cols.map(function(c){return'<td>'+f(c)+'</td>';}).join('')+'</tr>';
+ }
+ return'<div class="sec"><h3>Brand vs brand</h3>'+
+  '<p class="tiny">'+esc(perLabel(0))+', every brand at once — this one ignores the brand you are viewing.</p>'+
+  '<div class="tbl"><table><thead><tr><th></th>'+
+  cols.map(function(c){return'<th>'+esc(c.b)+'</th>';}).join('')+'</tr></thead><tbody>'+
+  row('Money in',function(c){return usdc(c.T.gi);})+
+  row('Money out',function(c){return usdc(c.T.go);})+
+  row('Commission',function(c){return usdc(c.T.gc);})+
+  row('Net',function(c){return'<span class="'+(c.T.net>=0?'pos':'neg')+'">'+usdc(c.T.net)+'</span>';},true)+
+  row('Margin',function(c){return c.T.gi?c.mg+'%':'—';})+
+  row('Deals',function(c){return String(c.T.ni);})+
+  row('Avg deal',function(c){return c.T.ni?usdc(c.avg):'—';})+
+  '</tbody></table></div></div>';
+}
+function capSec(T){
+ var caps=(S.caps||[]).filter(function(c){return c[0]&&num(c[1])>0;});
+ if(!caps.length||T.gi<=0)return'';
+ var P=periodTx(0),spend={};
+ P.forEach(function(t){
+  if(t.type!=='out'||t.cat==='Team commission')return;
+  spend[t.cat]=(spend[t.cat]||0)+num(t.usd);
+ });
+ spend['Team commission']=T.gc;
+ return'<div class="sec"><h3>Spending caps</h3>'+
+  '<p class="tiny">Each cap is a share of the money that came in this period. Set them in Settings.</p>'+
+  caps.map(function(c){
+   var k=c[0],lim=num(c[1]),got=spend[k]||0,pct=got/T.gi*100,over=pct>lim;
+   return'<div class="cap"><div class="l"><b>'+cmeta(k)[0]+' '+esc(k)+'</b>'+
+    '<span class="r2'+(over?' neg':'')+'">'+pct.toFixed(1)+'% <span style="color:var(--faint);font-weight:600">of '+lim+'%</span></span></div>'+
+    '<div class="ibar'+(over?' o':'')+'"><i style="width:'+Math.max(2,Math.min(100,pct/lim*100))+'%"></i></div>'+
+    '<div class="s" style="font-size:11.5px;color:var(--faint);font-weight:600;margin-top:5px">'+
+    usdc(got)+' of '+usdc(T.gi*lim/100)+(over?' · over by '+usdc(got-T.gi*lim/100):'')+'</div></div>';
+  }).join('')+'</div>';
+}
 function mixColor(k,order){
  if(k==='Other')return MIXO;
  var i=order.indexOf(k);
@@ -1626,9 +1763,10 @@ function insHtml(){
  }
  var gin=group(P.filter(function(t){return t.type==='in';}),recv);
  var gout=group(P.filter(function(t){return t.type==='out'&&t.cat!=='Team commission';}),function(t){return num(t.usd);});
- function bars(g,red){
+ function bars(g,red,den){
+  den=den||g.tot;
   return Object.keys(g.m).sort(function(a,b){return g.m[b]-g.m[a];}).map(function(k){
-   var v=g.m[k],pct=g.tot?Math.round(v/g.tot*100):0,cm=cmeta(k);
+   var v=g.m[k],pct=den?Math.round(v/den*100):0,cm=cmeta(k);
    return'<div style="padding:9px 2px">'+
     '<div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px">'+
     '<span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cm[0]+' '+esc(k)+'</span>'+
@@ -1670,7 +1808,13 @@ function insHtml(){
  }
  return'<p class="tiny" style="margin-top:4px">'+esc(brandView||'All brands')+' \u00b7 '+esc(perLabel(0))+' \u00b7 updates automatically</p>'+
   (gin.tot?'<div class="sec"><h3>Where money came from</h3>'+bars(gin,false)+'</div>':'')+
-  (gout.tot?'<div class="sec"><h3>Where money went</h3>'+bars(gout,true)+'</div>':'')+
+  (gout.tot?'<div class="sec"><h3>Where money went</h3>'+
+   (T.gi>0?'<div class="mseg"><button data-cshare="spend"'+(costOf==='income'?'':' class="on"')+'>% of spend</button>'+
+    '<button data-cshare="income"'+(costOf==='income'?' class="on"':'')+'>% of money in</button></div>':'')+
+   bars(gout,true,(costOf==='income'&&T.gi>0)?T.gi:0)+'</div>':'')+
+  capSec(T)+
+  cmpSec()+
+  brandSec()+
   mixBlock(mixAll?scoped:P)+
   (order.length?'<div class="sec"><h3>Package profitability</h3><p class="tiny">Booked deal values, after commission \u2014 which package actually earns.</p>'+prof+'</div>':'')+
   (eff?'<div class="sec"><h3>Efficiency</h3>'+eff+'</div>':'');
@@ -1798,16 +1942,23 @@ function contactLinks(v){
 function cliHtml(){
  var per={};
  S.tx.filter(function(t){return inScope(t)&&t.type==='in'&&t.party;}).forEach(function(t){
-  var k=t.party;if(!per[k])per[k]={d:0,v:0,r:0,last:''};
-  per[k].d++;per[k].v+=num(t.usd);per[k].r+=recv(t);
+  var k=t.party;if(!per[k])per[k]={d:0,v:0,r:0,c:0,last:''};
+  per[k].d++;per[k].v+=num(t.usd);per[k].r+=recv(t);per[k].c+=comv(t);
   if(t.date>per[k].last)per[k].last=t.date;
  });
- var e=Object.keys(per).map(function(k){return[k,per[k]];}).sort(function(a,b){return b[1].v-a[1].v;});
+ /* rank by what is left after commission — a big deal with a big fee is not a big client */
+ var e=Object.keys(per).map(function(k){return[k,per[k]];})
+   .sort(function(a,b){return (b[1].v-b[1].c)-(a[1].v-a[1].c);});
+ var again=e.filter(function(x){return x[1].d>1;}).length;
  if(!e.length)return'<p class="tiny" style="padding:10px 0 20px">No clients yet. Fill in \u201cReceived from\u201d when you log money in.</p>';
- return'<div class="sec">'+e.map(function(x){
-  var k=x[0],o=x[1],due=o.v-o.r,ct=(S.contacts||{})[k]||'';
+ return'<p class="tiny" style="margin-top:4px">'+e.length+(e.length===1?' client':' clients')+
+  ' \u00b7 '+(again?again+' came back ('+Math.round(again/e.length*100)+'%)':'none has come back yet')+
+  ' \u00b7 ranked by what is left after commission</p>'+
+  '<div class="sec">'+e.map(function(x){
+  var k=x[0],o=x[1],due=o.v-o.r,net=o.v-o.c,ct=(S.contacts||{})[k]||'';
   return'<div class="cli"><div class="kv" style="padding-bottom:8px"><span>'+esc(k)+'<div class="s">'+o.d+(o.d===1?' deal':' deals')+' \u00b7 last '+dmy(o.last)+
-   (due>0?' \u00b7 <span style="color:var(--out);font-weight:700">'+usd(due)+' owed</span>':'')+'</div></span><b>'+usd(o.v)+'</b></div>'+
+   (due>0?' \u00b7 <span style="color:var(--out);font-weight:700">'+usd(due)+' owed</span>':'')+'</div></span>'+
+   '<span class="r"><b>'+usd(net)+'</b><div class="s">'+(o.c?'after '+usd(o.c)+' fee':'of '+usd(o.v))+'</div></span></div>'+
    '<div class="ctc"><input value="'+esc(ct)+'" data-ct2="'+esc(k)+'" placeholder="@handle or link" autocomplete="off">'+contactLinks(ct)+'</div></div>';
  }).join('')+'</div>';
 }
@@ -1850,6 +2001,9 @@ function setHtml(){
   pairT('wallets',S.wallets,'Chain','Address')+'</div>'+
   '<div class="sec"><h3>Invoice terms</h3>'+
   '<div class="fr"><textarea id="pInvNote" placeholder="e.g. Listing goes live within 24h of payment.">'+esc(S.invNote||'')+'</textarea></div></div>'+
+  '<div class="sec"><h3>Spending caps \u00b7 % of money in</h3>'+
+  '<p class="tiny">A ceiling per category, checked against each period in Insights. Use the exact category name, e.g. Tip shiller or Team commission.</p>'+
+  pair('caps',S.caps,'Category','%')+'</div>'+
   '<div class="sec"><h3>Monthly target \u00b7 money in</h3>'+
   '<p class="tiny">Shows a progress card under the hero in month view. Leave it at 0 to hide it.</p>'+
   '<div class="ed o"><input class="nm" type="number" step="any" id="pGoal" value="'+(S.goal||'')+'" placeholder="0"><span></span></div></div>'+
@@ -1879,7 +2033,7 @@ function dataHtml(){
 
 /* global events */
 document.addEventListener('click',function(e){
- var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-mix],[data-rate],[data-lock]');
+ var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-mix],[data-cshare],[data-rate],[data-lock]');
  if(!el)return;
  var d=el.dataset;
  if(d.lock!==undefined){
@@ -1894,6 +2048,7 @@ document.addEventListener('click',function(e){
   return;
  }
  if(d.mix!==undefined){mixAll=(d.mix==='all');repaint();return;}
+ if(d.cshare!==undefined){costOf=d.cshare;repaint();return;}
  if(d.rate!==undefined){
   toast('Checking prices\u2026');
   fetchRates(true).then(function(n){

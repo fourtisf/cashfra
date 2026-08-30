@@ -7,6 +7,7 @@
     "smoke": "node smoke.mjs",
     "rates": "node rates.mjs",
     "features": "node features.mjs",
+    "analytics": "node analytics.mjs",
     "deploy": "node update.mjs"
   },
   "devDependencies": {
