@@ -6,6 +6,7 @@
   "scripts": {
     "smoke": "node smoke.mjs",
     "rates": "node rates.mjs",
+    "features": "node features.mjs",
     "deploy": "node update.mjs"
   },
   "devDependencies": {

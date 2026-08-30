@@ -90,6 +90,11 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .nt .tx b{color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums}
 .nt button{background:var(--brand-soft);color:var(--brand-ink);font-size:12.5px;font-weight:700;border-radius:999px;padding:7px 13px;white-space:nowrap}
 .nt button:active{transform:scale(.96)}
+.nt.gl .tx{color:var(--sub)}
+.nt.gl .ibar{margin-top:7px}
+.nt .pcg{font-family:var(--disp);font-weight:800;font-size:16px;flex:none;font-variant-numeric:tabular-nums}
+.ratehint{font-size:12px;color:var(--amber);font-weight:600;margin-top:7px;line-height:1.5}
+.ratehint button{color:var(--brand-ink);font-weight:700;font-size:12px;text-decoration:underline;padding:0}
 
 /* ── section head ── */
 .seh{display:flex;align-items:center;gap:10px;padding:24px 4px 12px}
@@ -251,6 +256,38 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .mixr .nm2{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .mixr .sb{font-size:12px;color:var(--faint);font-weight:500;margin-top:2px}
 .mixr .pc{font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--disp);flex:none;font-size:15px}
+.cli{padding:4px 0 12px;position:relative}
+.cli+.cli::before{content:"";position:absolute;top:0;left:2px;right:2px;height:1px;background:var(--line)}
+.ctc{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:0 2px}
+.ctc input{flex:1;min-width:120px;background:#F5F5F9;border-radius:11px;padding:8px 11px;font-size:13px}
+.ctc input:focus{outline:none;background:var(--card);box-shadow:inset 0 0 0 1.5px var(--brand)}
+.clnk{font-size:12px;font-weight:700;color:var(--brand-ink);background:var(--brand-soft);border-radius:999px;padding:6px 11px;text-decoration:none;white-space:nowrap}
+
+/* ── invoice / quotation ── */
+.inv{font-size:13.5px;line-height:1.6}
+.inv .ihd{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding-bottom:14px;border-bottom:2px solid var(--ink)}
+.inv .ibrand{font-family:var(--disp);font-weight:800;font-size:20px;letter-spacing:-.01em}
+.inv .ikind{text-align:right;flex:none}
+.inv .ikind b{display:block;font-size:11.5px;font-weight:800;letter-spacing:.09em;color:var(--sub);text-transform:uppercase}
+.inv .ino{font-variant-numeric:tabular-nums;font-size:12.5px;color:var(--faint);font-weight:600}
+.inv .irow{display:flex;justify-content:space-between;gap:14px;padding:8px 0;position:relative}
+.inv .irow+.irow::before{content:"";position:absolute;top:0;left:0;right:0;height:1px;background:var(--line)}
+.inv .irow span:first-child{color:var(--sub);font-weight:600;flex:none}
+.inv .irow span:last-child{text-align:right;font-weight:600;word-break:break-word}
+.inv h4{font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin:20px 0 4px}
+.inv .itot{display:flex;justify-content:space-between;align-items:baseline;gap:14px;margin-top:14px;padding-top:14px;border-top:2px solid var(--ink)}
+.inv .itot b{font-family:var(--disp);font-weight:800;font-size:23px;font-variant-numeric:tabular-nums}
+.inv .iaddr{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;word-break:break-all;background:#F5F5F9;border-radius:11px;padding:10px 12px;margin-top:4px}
+.inv .ift{font-size:12px;color:var(--sub);margin-top:18px;white-space:pre-wrap}
+@media print{
+  body{background:#fff}
+  body *{visibility:hidden!important}
+  #invDoc,#invDoc *{visibility:visible!important}
+  #ovInv{position:static!important;display:block!important;background:none!important;backdrop-filter:none!important;padding:0!important}
+  #ovInv .sheet{box-shadow:none!important;max-height:none!important;border-radius:0!important;animation:none!important}
+  #ovInv .sh,#ovInv .sfoot,#ovInv .grab{display:none!important}
+  #invDoc{padding:0}
+}
 .sec{padding:14px 0 18px}
 .sec h3{font-size:13px;color:var(--faint);font-weight:700;margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;font-size:11.5px}
 .tiny{font-size:12.5px;color:var(--sub);line-height:1.6;margin-bottom:12px}
@@ -387,6 +424,7 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
     </div>
   </section>
 
+  <div id="goal"></div>
   <div id="alert"></div>
 
   <div class="seh">
@@ -418,6 +456,7 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
       <div class="amtbox">
         <input class="big" id="fAmt" type="text" inputmode="decimal" placeholder="0" autocomplete="off" aria-label="Amount">
         <div class="usdline">&#8776; <b id="fUsd">$0.00</b> &nbsp;&middot;&nbsp; rate $<input id="fRate" type="text" inputmode="decimal" placeholder="0" aria-label="USD rate"></div>
+        <div class="ratehint hide" id="rateHint"></div>
       </div>
       <div class="toks" id="toks"></div>
 
@@ -456,9 +495,24 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
     <div class="sfoot">
       <button class="bt red hide" id="fDel">Delete</button>
       <button class="bt hide" id="fDup">Duplicate</button>
+      <button class="bt hide" id="fInv">Invoice</button>
       <div class="gap"></div>
       <button class="bt hide" id="fAgain">Save &amp; add more</button>
       <button class="bp" id="fSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- invoice / quotation -->
+<div class="ov" id="ovInv">
+  <div class="sheet">
+    <div class="grab"></div>
+    <div class="sh"><h2 id="invTitle">Invoice</h2><button class="x" id="invX">&#10005;</button></div>
+    <div class="sbody"><div id="invDoc" class="inv"></div></div>
+    <div class="sfoot">
+      <button class="bt" id="invCopy">Copy text</button>
+      <div class="gap"></div>
+      <button class="bp" id="invPrint">Print / PDF</button>
     </div>
   </div>
 </div>
@@ -574,11 +628,12 @@ var DEF={v:3,tx:[],
  brands:['Fourtis','Dexvra'],
  brand:'Fourtis',
  idr:16300, last:{tok:'SOL',ch:'SOL'}, demo:false, recSkip:'', lockHash:'', lockSalt:'', lockLen:0, lockNum:true, lockPreset:'',
- rateAuto:true, rateAt:0
+ rateAuto:true, rateAt:0, bkAt:0, goal:0, lockIdle:300, contacts:{},
+ wallets:[['SOL',''],['BSC',''],['ETH',''],['BASE',''],['TRON','']], invNote:''
 };
 var S=clone(DEF);
 var anchor=new Date(), flt='', editId=null, fType='in', fTokV='SOL', fChainV='SOL', fBrandV='', brandView='', formPkg='', panel='menu', undoBuf=null;
-var mixAll=false, ratePrefill='', rateBusy=false;
+var mixAll=false, ratePrefill='', rateBusy=false, hidAt=0, autoLocked=false;
 
 function clone(o){return JSON.parse(JSON.stringify(o));}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
@@ -841,6 +896,11 @@ function render(){
 
  var msgs=[];
  if(T.pi>0)msgs.push({e:'\ud83d\udcb8',bg:'var(--amber-soft)',b:usdc(T.pi),t:' still owed to you by clients',c:'Show',a:'flt2',v:'unpaid'});
+ if(S.tx.length&&!S.demo){
+  var bAt=num(S.bkAt);
+  if(!bAt)msgs.push({e:'🛡️',bg:'#E7F0FF',b:'No backup yet',t:' — this phone is the only copy of your books',c:'Back up',a:'bk',v:'1'});
+  else if(Date.now()-bAt>=12096e5)msgs.push({e:'🛡️',bg:'#E7F0FF',b:'Last backup '+relTime(bAt),t:' — worth taking a fresh one',c:'Back up',a:'bk',v:'1'});
+ }
  var miss=missingRecur();
  if(miss.length)msgs.push({e:'\ud83d\udd01',bg:'var(--brand-soft)',b:String(miss.length),t:(miss.length===1?' recurring expense is':' recurring expenses are')+' not logged yet this month',c:'Log '+(miss.length===1?'it':'them'),a:'recur',v:'1'});
  $('#alert').innerHTML=msgs.map(function(m){
@@ -849,8 +909,20 @@ function render(){
    '<button data-'+m.a+'="'+m.v+'">'+esc(m.c)+'</button></div>';
  }).join('');
 
+ goalCard(T);
  strip();
  renderList(P);
+}
+function goalCard(T){
+ var g=num(S.goal),el=$('#goal');
+ /* the target is a monthly number, so it only means anything in month view */
+ if(g<=0||per!=='m'){el.innerHTML='';return;}
+ var got=T.gi,pct=Math.round(got/g*100),done=got>=g,left=g-got;
+ el.innerHTML='<div class="nt gl"><span class="ic" style="background:'+(done?'var(--in-soft)':'var(--brand-soft)')+'">'+(done?'🎉':'🎯')+'</span>'+
+  '<span class="tx"><b>'+usdc(got)+'</b> of <b>'+usdc(g)+'</b> · money in '+esc(perLabel(0))+
+  (done?'':' · '+usdc(left)+' to go')+
+  '<div class="ibar"><i style="width:'+Math.max(2,Math.min(100,pct))+'%'+(done?';background:var(--in)':'')+'"></i></div></span>'+
+  '<span class="pcg'+(done?' pos':'')+'">'+pct+'%</span></div>';
 }
 function strip(){
  var buckets=[],mx=1;
@@ -1227,6 +1299,18 @@ function fetchRates(force){
   return n;
  })['catch'](function(){rateBusy=false;return -1;});
 }
+var RATE_STALE=864e5;   /* a day */
+function rateHint(){
+ var el=$('#rateHint'),msg='';
+ /* only worth saying for a new entry, on a coin the feed actually covers */
+ if(!editId&&S.rateAuto&&COINS[String(fTokV).toUpperCase()]){
+  var at=num(S.rateAt);
+  if(!at)msg='Live prices haven’t been checked yet.';
+  else if(Date.now()-at>RATE_STALE)msg='This price was last checked '+relTime(at)+'.';
+ }
+ el.classList.toggle('hide',!msg);
+ if(msg)el.innerHTML=esc(msg)+' <button type="button" data-rate="now">Refresh</button>';
+}
 function autoRate(){
  for(var i=0;i<S.rates.length;i++)if(S.rates[i][0]===fTokV){
   $('#fRate').value=(fTokV==='IDR')?(S.idr?String(parseFloat((1/S.idr).toFixed(9))):''):(S.rates[i][1]||'');
@@ -1248,6 +1332,7 @@ function calc(){
  if($('#fRecur').checked)b.push('monthly');
  $('#accSum').textContent=b.length?('\u00b7 '+b.join(' \u00b7 ')):'';
  $('#rPaid').classList.toggle('hide',$('#fStat').value!=='dp');
+ rateHint();
 }
 function setType(){
  $$('#seg button').forEach(function(b){
@@ -1278,6 +1363,7 @@ function openForm(t){
  $('#fDel').classList.toggle('hide',!t);
  $('#fDup').classList.toggle('hide',!t);
  $('#fAgain').classList.toggle('hide',!!t);
+ $('#fInv').classList.toggle('hide',!(t&&t.type==='in'));
  setType();
  fillCats(t?t.cat:null);
  syncTok();syncChain();
@@ -1620,6 +1706,95 @@ function comHtml(){
    return'<div class="kv"><span>'+esc(t.party||'-')+'<div class="s">'+dmy(t.date)+(t.note?' \u00b7 '+esc(t.note):'')+'</div></span><b class="neg">'+usd(num(t.usd))+'</b></div>';
   }).join('')+'</div>':'');
 }
+/* An unpaid deal is a quotation; once money has moved it is an invoice.
+   Everything below is read off the entry — nothing extra is saved on it. */
+var invTx=null;
+function walletFor(ch){
+ var w=S.wallets||[],i;
+ for(i=0;i<w.length;i++)if(w[i][0]&&w[i][1]&&w[i][0].toLowerCase()===String(ch||'').toLowerCase())return w[i][1];
+ return'';
+}
+function invNo(t){
+ var b=String(t.brand||'CF').replace(/[^A-Za-z0-9]/g,'').slice(0,3).toUpperCase()||'CF';
+ return b+'-'+t.date.replace(/-/g,'').slice(2)+'-'+String(t.id).slice(-4).toUpperCase();
+}
+function invData(t){
+ var due=Math.max(0,num(t.usd)-recv(t)), quote=(t.status==='unpaid');
+ return{
+  kind:quote?'Quotation':'Invoice', no:invNo(t), date:dmy(t.date),
+  brand:t.brand||'Cashfra', client:t.party||'—',
+  contact:(S.contacts||{})[t.party]||'',
+  item:t.pkg||t.cat||'—', chain:t.chain||'',
+  amt:tokf(num(t.amt))+' '+(t.tok||''), rate:usd(num(t.rate)), value:usd(num(t.usd)),
+  paid:recv(t), due:due, status:STL[t.status||'paid'],
+  wallet:walletFor(t.chain), link:t.link||'', note:t.note||''
+ };
+}
+function invHtml(t){
+ var d=invData(t);
+ function row(k,v){return v?'<div class="irow"><span>'+esc(k)+'</span><span>'+esc(v)+'</span></div>':'';}
+ return'<div class="ihd"><div><div class="ibrand">'+esc(d.brand)+'</div>'+
+  '<div class="ino">'+esc(d.date)+'</div></div>'+
+  '<div class="ikind"><b>'+esc(d.kind)+'</b><div class="ino">'+esc(d.no)+'</div></div></div>'+
+  '<h4>Billed to</h4>'+row('Client',d.client)+row('Contact',d.contact)+
+  '<h4>Item</h4>'+row('Package',d.item)+row('Chain',d.chain)+
+  row('Amount',d.amt)+row('Rate',d.rate+' / '+(t.tok||'token'))+row('Value',d.value)+
+  '<h4>Payment</h4>'+row('Status',d.status)+
+  (d.paid>0?row('Received',usd(d.paid)):'')+
+  (d.wallet?'<h4>Pay to'+(d.chain?' · '+esc(d.chain):'')+'</h4><div class="iaddr">'+esc(d.wallet)+'</div>':
+   '<p class="tiny" style="margin:14px 0 0">No wallet saved for '+esc(d.chain||'this chain')+' — add one in Settings → Wallets.</p>')+
+  '<div class="itot"><span>'+(d.due>0?'Amount due':'Total')+'</span><b>'+usd(d.due>0?d.due:num(t.usd))+'</b></div>'+
+  ((d.note||S.invNote)?'<div class="ift">'+esc([d.note,S.invNote].filter(Boolean).join('\n'))+'</div>':'');
+}
+function invText(t){
+ var d=invData(t),L=[];
+ L.push(d.brand+' · '+d.kind+' '+d.no);
+ L.push(d.date);
+ L.push('');
+ L.push('Client: '+d.client);
+ L.push('Package: '+d.item+(d.chain?' ('+d.chain+')':''));
+ L.push('Amount: '+d.amt+'  =  '+d.value+'  @ '+d.rate);
+ L.push('Status: '+d.status);
+ if(d.paid>0)L.push('Received: '+usd(d.paid));
+ L.push((d.due>0?'AMOUNT DUE: ':'TOTAL: ')+usd(d.due>0?d.due:num(t.usd)));
+ if(d.wallet){L.push('');L.push('Pay to'+(d.chain?' ('+d.chain+')':'')+': '+d.wallet);}
+ if(d.link){L.push('');L.push('Announcement: '+d.link);}
+ var ft=[d.note,S.invNote].filter(Boolean).join('\n');
+ if(ft){L.push('');L.push(ft);}
+ return L.join('\n');
+}
+function openInv(t){
+ if(!t||t.type!=='in')return;
+ invTx=t;
+ $('#invTitle').textContent=invData(t).kind;
+ $('#invDoc').innerHTML=invHtml(t);
+ $('#ovInv').classList.add('on');
+}
+function copyText(txt){
+ if(navigator.clipboard&&navigator.clipboard.writeText)
+  return navigator.clipboard.writeText(txt).then(function(){return true;})['catch'](function(){return fallbackCopy(txt);});
+ return Promise.resolve(fallbackCopy(txt));
+}
+function fallbackCopy(txt){
+ try{
+  var a=document.createElement('textarea');
+  a.value=txt;a.setAttribute('readonly','');a.style.position='fixed';a.style.opacity='0';
+  document.body.appendChild(a);a.select();
+  var okc=document.execCommand('copy');
+  a.parentNode.removeChild(a);
+  return okc;
+ }catch(e){return false;}
+}
+function contactLinks(v){
+ v=String(v||'').trim();
+ if(!v)return'';
+ if(/^https?:\/\//i.test(v))
+  return'<a href="'+esc(v)+'" target="_blank" rel="noopener" class="clnk">Open ↗</a>';
+ var h=v.replace(/^@/,'');
+ if(!/^[A-Za-z0-9_.]{2,32}$/.test(h))return'';
+ return'<a href="https://t.me/'+esc(h)+'" target="_blank" rel="noopener" class="clnk">Telegram ↗</a>'+
+  '<a href="https://x.com/'+esc(h)+'" target="_blank" rel="noopener" class="clnk">X ↗</a>';
+}
 function cliHtml(){
  var per={};
  S.tx.filter(function(t){return inScope(t)&&t.type==='in'&&t.party;}).forEach(function(t){
@@ -1630,9 +1805,10 @@ function cliHtml(){
  var e=Object.keys(per).map(function(k){return[k,per[k]];}).sort(function(a,b){return b[1].v-a[1].v;});
  if(!e.length)return'<p class="tiny" style="padding:10px 0 20px">No clients yet. Fill in \u201cReceived from\u201d when you log money in.</p>';
  return'<div class="sec">'+e.map(function(x){
-  var k=x[0],o=x[1],due=o.v-o.r;
-  return'<div class="kv"><span>'+esc(k)+'<div class="s">'+o.d+(o.d===1?' deal':' deals')+' \u00b7 last '+dmy(o.last)+
-   (due>0?' \u00b7 <span style="color:var(--out);font-weight:700">'+usd(due)+' owed</span>':'')+'</div></span><b>'+usd(o.v)+'</b></div>';
+  var k=x[0],o=x[1],due=o.v-o.r,ct=(S.contacts||{})[k]||'';
+  return'<div class="cli"><div class="kv" style="padding-bottom:8px"><span>'+esc(k)+'<div class="s">'+o.d+(o.d===1?' deal':' deals')+' \u00b7 last '+dmy(o.last)+
+   (due>0?' \u00b7 <span style="color:var(--out);font-weight:700">'+usd(due)+' owed</span>':'')+'</div></span><b>'+usd(o.v)+'</b></div>'+
+   '<div class="ctc"><input value="'+esc(ct)+'" data-ct2="'+esc(k)+'" placeholder="@handle or link" autocomplete="off">'+contactLinks(ct)+'</div></div>';
  }).join('')+'</div>';
 }
 function setHtml(){
@@ -1640,6 +1816,13 @@ function setHtml(){
   return arr.map(function(r,i){
    return'<div class="ed"><input value="'+esc(r[0])+'" data-s="'+k+'" data-i="'+i+'" data-f="0" placeholder="'+p1+'">'+
     '<input class="nm" type="number" step="any" value="'+(r[1]||'')+'" data-s="'+k+'" data-i="'+i+'" data-f="1" placeholder="'+p2+'">'+
+    '<button data-rm="'+k+'" data-i="'+i+'" aria-label="Remove">\u2715</button></div>';}).join('')+
+   '<button class="bs" data-push="'+k+'" style="margin-top:4px;font-size:12.5px;padding:8px 14px">+ Add row</button>';
+ }
+ function pairT(k,arr,p1,p2){
+  return arr.map(function(r,i){
+   return'<div class="ed"><input value="'+esc(r[0])+'" data-s="'+k+'" data-i="'+i+'" data-f="0" placeholder="'+p1+'">'+
+    '<input value="'+esc(r[1]||'')+'" data-s="'+k+'" data-i="'+i+'" data-f="t" placeholder="'+p2+'">'+
     '<button data-rm="'+k+'" data-i="'+i+'" aria-label="Remove">\u2715</button></div>';}).join('')+
    '<button class="bs" data-push="'+k+'" style="margin-top:4px;font-size:12.5px;padding:8px 14px">+ Add row</button>';
  }
@@ -1662,9 +1845,21 @@ function setHtml(){
   '<div class="sec"><h3>Team \u00b7 default commission %</h3>'+pair('team',S.team,'Name','%')+'</div>'+
   '<div class="sec"><h3>Chains</h3>'+one('chains',S.chains,'Chain name')+'</div>'+
   '<div class="sec"><h3>Brands</h3><p class="tiny">Each entry belongs to one brand. Renaming here doesn\u2019t change old entries.</p>'+one('brands',S.brands,'Brand name')+'</div>'+
+  '<div class="sec"><h3>Wallets \u00b7 where clients pay</h3>'+
+  '<p class="tiny">Used on the invoice, matched to the deal\u2019s chain.</p>'+
+  pairT('wallets',S.wallets,'Chain','Address')+'</div>'+
+  '<div class="sec"><h3>Invoice terms</h3>'+
+  '<div class="fr"><textarea id="pInvNote" placeholder="e.g. Listing goes live within 24h of payment.">'+esc(S.invNote||'')+'</textarea></div></div>'+
+  '<div class="sec"><h3>Monthly target \u00b7 money in</h3>'+
+  '<p class="tiny">Shows a progress card under the hero in month view. Leave it at 0 to hide it.</p>'+
+  '<div class="ed o"><input class="nm" type="number" step="any" id="pGoal" value="'+(S.goal||'')+'" placeholder="0"><span></span></div></div>'+
   '<div class="sec"><h3>App lock</h3><p class="tiny">'+(S.lockHash?'An access code is required every time the app opens.':'No access code is set right now.')+'</p>'+
   '<div class="wrapb"><button class="bs" data-lock="change">'+(S.lockHash?'Change code':'Set a code')+'</button>'+
-  (S.lockHash?'<button class="bs" data-lock="remove" style="color:var(--out)">Remove code</button>':'')+'</div></div>'+
+  (S.lockHash?'<button class="bs" data-lock="remove" style="color:var(--out)">Remove code</button>':'')+'</div>'+
+  (S.lockHash?'<div class="fr" style="margin-top:16px"><label>Ask for it again when I come back</label><select id="pIdle">'+
+   IDLES.map(function(o){return'<option value="'+o[0]+'"'+(num(S.lockIdle)===o[0]?' selected':'')+'>'+esc(o[1])+'</option>';}).join('')+
+   '</select><p class="tiny" style="margin:8px 0 0">The screen is covered as soon as you leave either way, so the app switcher never shows your numbers.</p></div>':'')+
+  '</div>'+
   '<div class="sec"><h3>USD \u2192 IDR rate</h3>'+
   '<p class="tiny">Only used for the \u201c\u2248 Rp\u201d line. '+(S.rateAuto?'Kept up to date with the token prices above.':'Manual while auto-update is off.')+'</p>'+
   '<div class="ed o"><input class="nm" type="number" id="pIdr" value="'+(S.idr||'')+'"></div></div>';
@@ -1674,7 +1869,9 @@ function dataHtml(){
   '<div class="wrapb"><button class="bs" data-csv="month">CSV \u00b7 '+MO[anchor.getMonth()]+'</button>'+
   '<button class="bs" data-csv="all">CSV \u00b7 all</button>'+
   '<button class="bs" data-bk="1">Backup</button>'+
+  (canShareFiles()?'<button class="bs" data-bks="1">Share backup</button>':'')+
   '<button class="bs" data-rs="1">Restore</button></div>'+
+  '<p class="tiny" style="margin:10px 0 0">'+(num(S.bkAt)?'Last backup '+esc(relTime(num(S.bkAt)))+'.':'No backup taken yet.')+'</p>'+
   '<input type="file" id="rsFile" accept="application/json,.json" class="hide"></div>'+
   '<div class="sec"><h3>'+S.tx.length+(S.tx.length===1?' entry stored':' entries stored')+'</h3>'+
   '<button class="bs" data-wipe="1" style="color:var(--out)">Delete all entries</button></div>';
@@ -1682,7 +1879,7 @@ function dataHtml(){
 
 /* global events */
 document.addEventListener('click',function(e){
- var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-rs],[data-mix],[data-rate],[data-lock]');
+ var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-mix],[data-rate],[data-lock]');
  if(!el)return;
  var d=el.dataset;
  if(d.lock!==undefined){
@@ -1740,25 +1937,45 @@ document.addEventListener('click',function(e){
   return;
  }
  if(d.push!==undefined){
-  S[d.push].push((d.push==='chains'||d.push==='brands')?'':['',0]);
+  S[d.push].push((d.push==='chains'||d.push==='brands')?'':(d.push==='wallets'?['','']:['',0]));
   save();repaint();return;
  }
  if(d.csv!==undefined){csv(d.csv==='all');return;}
- if(d.bk!==undefined){dl('fourtis-backup-'+today()+'.json',JSON.stringify(S,null,2),'application/json');toast('Backup downloaded');return;}
+ if(d.bk!==undefined||d.bks!==undefined){
+  var bname='fourtis-backup-'+today()+'.json', body=JSON.stringify(S,null,2);
+  S.bkAt=Date.now();save();render();
+  if($('#ovPanel').classList.contains('on'))repaint();
+  if(d.bks!==undefined&&shareBackup(bname,body))return;
+  dl(bname,body,'application/json');
+  toast('Backup downloaded · keep it off this phone');
+  return;
+ }
  if(d.rs!==undefined){$('#rsFile').click();return;}
 });
 document.addEventListener('input',function(e){
  var d=e.target.dataset;
+ if(d.ct2!==undefined){
+  if(!S.contacts)S.contacts={};
+  var v=e.target.value.trim();
+  if(v)S.contacts[d.ct2]=v; else delete S.contacts[d.ct2];
+  save();
+  return;      /* no repaint: it would yank the cursor out of the field */
+ }
  if(d.s){
   if(d.f==='s')S[d.s][+d.i]=e.target.value;
+  else if(d.f==='t')S[d.s][+d.i][1]=e.target.value;
   else S[d.s][+d.i][+d.f]=(d.f==='1')?num(e.target.value):e.target.value;
   save();fillStatic();
   if(d.s==='brands')brandUI();
   return;
  }
- if(e.target.id==='pIdr'){S.idr=num(e.target.value);save();render();}
+ if(e.target.id==='pIdr'){S.idr=num(e.target.value);save();render();return;}
+ if(e.target.id==='pGoal'){S.goal=num(e.target.value);save();render();return;}
+ if(e.target.id==='pInvNote'){S.invNote=e.target.value;save();}
 });
 document.addEventListener('change',function(e){
+ if(e.target.dataset.ct2!==undefined){repaint();return;}
+ if(e.target.id==='pIdle'){S.lockIdle=num(e.target.value);save();return;}
  if(e.target.id==='pAuto'){
   S.rateAuto=e.target.checked;save();
   if(S.rateAuto)fetchRates(true).then(function(){repaint();});
@@ -1778,6 +1995,16 @@ document.addEventListener('change',function(e){
  };
  r.readAsText(f);e.target.value='';
 });
+$('#fInv').onclick=function(){var t=findTx(editId);if(t)openInv(t);};
+$('#invX').onclick=function(){$('#ovInv').classList.remove('on');};
+$('#ovInv').onclick=function(e){if(e.target===this)this.classList.remove('on');};
+$('#invPrint').onclick=function(){window.print();};
+$('#invCopy').onclick=function(){
+ if(!invTx)return;
+ copyText(invText(invTx)).then(function(okc){
+  toast(okc?'Copied \u2014 paste it into the chat':'Could not copy on this browser');
+ });
+};
 $('#addBtn2').onclick=function(){openForm(null);};
 $('#prev').onclick=function(){step(-1);};
 $('#next').onclick=function(){step(1);};
@@ -1793,6 +2020,7 @@ document.addEventListener('keydown',function(e){
  var fo=$('#ovForm').classList.contains('on'), po=$('#ovPanel').classList.contains('on')||$('#ovBrand').classList.contains('on')||$('#story').classList.contains('on');
  var tag=e.target.tagName, typing=/^(INPUT|TEXTAREA|SELECT)$/.test(tag);
  if(e.key==='Escape'){
+  if($('#ovInv').classList.contains('on')){$('#ovInv').classList.remove('on');return;}
   if(fo)closeForm();
   else if($('#story').classList.contains('on'))$('#story').classList.remove('on');
   else if($('#ovBrand').classList.contains('on'))$('#ovBrand').classList.remove('on');
@@ -1881,6 +2109,20 @@ $('#story').addEventListener('click',function(e){
  }
 });
 
+function canShareFiles(){
+ try{return !!(navigator.share&&navigator.canShare&&navigator.canShare(
+  {files:[new File([''],'t.json',{type:'application/json'})]}));}catch(e){return false;}
+}
+function shareBackup(name,body){
+ /* hand the file straight to WhatsApp/Drive/Files where the OS allows it */
+ try{
+  var f=new File([body],name,{type:'application/json'});
+  if(!navigator.canShare||!navigator.canShare({files:[f]}))return false;
+  navigator.share({files:[f],title:'Cashfra backup',text:'Cashfra ledger backup · '+today()})
+   ['catch'](function(){});
+  return true;
+ }catch(e){return false;}
+}
 function dl(name,c,type){
  var b=new Blob([c],{type:type}),u=URL.createObjectURL(b),a=document.createElement('a');
  a.href=u;a.download=name;document.body.appendChild(a);a.click();
@@ -1989,6 +2231,7 @@ document.addEventListener('keydown',function(e){
 function hideGate(){$('#gate').classList.remove('on');gateMode='';}
 function startApp(){
  if(!appStarted){appStarted=true;fillStatic();fillCats();render();}
+ autoLocked=false;
  hideGate();
  fetchRates();
  if(toastAfterUnlock){toast(toastAfterUnlock);toastAfterUnlock='';}
@@ -1998,6 +2241,25 @@ function gerr(m){
  var i=$('#g1');i.classList.remove('err');void i.offsetWidth;i.classList.add('err');
  i.focus();if(i.select)i.select();
 }
+/* Cover the screen the moment the app is put away: it keeps the ledger out of
+   the Android app-switcher snapshot, and asks for the code again when the app
+   has been away longer than the grace period. */
+document.addEventListener('visibilitychange',function(){
+ if(!appStarted||!S.lockHash)return;
+ if(document.visibilityState==='hidden'){
+  hidAt=Date.now();
+  if($('#gate').classList.contains('on'))return;   /* already showing something */
+  autoLocked=true;
+  gate('lock');
+  return;
+ }
+ /* back again: waive the code if they were only away a moment */
+ if(!autoLocked)return;
+ var idle=num(S.lockIdle);
+ if(idle>=0&&Date.now()-hidAt>=idle*1000)return;   /* long enough — make them type it */
+ startApp();
+});
+var IDLES=[[-1,'Never — only when the app is opened'],[0,'Immediately'],[60,'After 1 minute'],[300,'After 5 minutes'],[900,'After 15 minutes']];
 $('#gGo').onclick=function(){
  if(gateMode==='forgot'){
   S=clone(DEF);

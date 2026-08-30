@@ -122,15 +122,16 @@ Opening `index.html` over `file://` still works — the app falls back to
 
 ## Tests
 
-Three Playwright suites, 73 checks. They are for this repo only and never ship
+Four Playwright suites, 107 checks. They are for this repo only and never ship
 to the server. The price feed is always stubbed, so the suites are hermetic.
 
 ```sh
 cd test && npm install && cd ..
 
-python3 dev-server.py 8123 &            # smoke + rates need a server
+python3 dev-server.py 8123 &            # all but the deploy suite need a server
 BASE=http://127.0.0.1:8123/ node test/smoke.mjs
 BASE=http://127.0.0.1:8123/ node test/rates.mjs
+BASE=http://127.0.0.1:8123/ node test/features.mjs
 
 node test/update.mjs                    # starts and tears down its own server
 ```
@@ -147,6 +148,13 @@ console errors anywhere.
 wobble pins to 1, USD→IDR follows, the call is throttled, the switch and the
 manual refresh work — and, the one that matters most, **entries already in the
 books keep the rate and USD they were saved with**.
+
+`features.mjs` (34 checks) covers the six later additions: the stale-price hint,
+the backup reminder and its download, auto-lock across all three grace settings,
+client contacts and their Telegram/X links, the monthly target card, and the
+invoice sheet — including that an unpaid deal reads as a *Quotation*, that the
+wallet matched to the deal's chain appears, and that the copied text is
+pasteable into a chat.
 
 `update.mjs` (7 checks) ships a second build mid-run and verifies the handover
 described under *Redeploying*.
