@@ -22,6 +22,7 @@ documents the data model and the business rules that must not change.
 | `icons/` | 192 and 512 icons, `maskable` variants for Android's adaptive shapes, and the 180px apple-touch-icon. |
 | `favicon.ico` | Browser tab icon. |
 | `.htaccess` | Apache/Hostinger config: HTTPS redirect, `noindex`, cache rules. |
+| `deploy/bootstrap.sh` | First time on a server: key, clone and deploy, in one run. |
 | `deploy/vps-setup.sh` | One-command deploy to an Ubuntu VPS, then checks the result. |
 | `deploy/vps-update.sh` | Pull the latest and redeploy, in one command. |
 | `deploy/nginx.conf` | The nginx site it installs (certbot adds TLS to it). |
@@ -76,27 +77,15 @@ Point the domain's A record at the server first. Then do everything **on the
 server** — pulling from GitHub means there is no file to move from a laptop and
 no second shell to confuse it with.
 
-Once, to give the server read-only access to this repo:
+First time on a server, `deploy/bootstrap.sh` does the whole thing: makes a
+key, waits while you paste it into the repo's deploy keys, clones, and deploys.
+Paste it in as a file and run it — a script read from the terminal would eat
+its own `read` prompt, and it refuses to run that way rather than misbehave.
 
-```sh
-apt install -y git
-ssh-keygen -t ed25519 -C "cashfra-vps" -f ~/.ssh/cashfra_deploy -N ""
-cat ~/.ssh/cashfra_deploy.pub          # add on GitHub → repo → Settings →
-                                       # Deploy keys → Add (leave write off)
-printf 'Host github-cashfra\n  HostName github.com\n  User git\n  IdentityFile ~/.ssh/cashfra_deploy\n  IdentitiesOnly yes\n' >> ~/.ssh/config
-chmod 600 ~/.ssh/config
+Adding the key on GitHub is the one step that cannot be automated, so the
+script stops and waits for it instead of failing three commands later.
 
-git clone --branch <branch> --single-branch \
-  git@github-cashfra:fourtisf/cashfra.git /opt/cashfra
-```
-
-Then, to deploy:
-
-```sh
-sudo bash /opt/cashfra/deploy/vps-setup.sh
-```
-
-and for every update after that:
+After that, every update is:
 
 ```sh
 sudo bash /opt/cashfra/deploy/vps-update.sh
