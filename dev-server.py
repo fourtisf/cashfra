@@ -24,10 +24,15 @@ class H(http.server.SimpleHTTPRequestHandler):
     def log_message(self, fmt, *a):
         sys.stderr.write('%s  %s\n' % (self.log_date_time_string(), fmt % a))
 
+class Server(socketserver.ThreadingTCPServer):
+    """Threaded on purpose: installing the service worker fetches the whole
+    shell at once, and a single-threaded server drops those parallel
+    connections - which looks exactly like a broken app."""
+    allow_reuse_address = True
+    daemon_threads = True
+
 port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
 root = sys.argv[2] if len(sys.argv) > 2 else '.'
-socketserver.TCPServer.allow_reuse_address = True
-with socketserver.TCPServer(('127.0.0.1', port),
-                            functools.partial(H, directory=root)) as s:
+with Server(('127.0.0.1', port), functools.partial(H, directory=root)) as s:
     print('cashfra dev server: http://127.0.0.1:%d/  (root: %s)' % (port, root))
     s.serve_forever()

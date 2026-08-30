@@ -2,9 +2,10 @@
   "name": "cashfra-tests",
   "private": true,
   "type": "module",
-  "description": "Browser checks for the deployed app. Not part of the app — the app itself has no dependencies.",
+  "description": "Browser checks for the deployed app. Not part of the app \u2014 the app itself has no dependencies.",
   "scripts": {
     "smoke": "node smoke.mjs",
+    "rates": "node rates.mjs",
     "deploy": "node update.mjs"
   },
   "devDependencies": {

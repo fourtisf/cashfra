@@ -122,23 +122,31 @@ Opening `index.html` over `file://` still works — the app falls back to
 
 ## Tests
 
-Two Playwright suites. They are for this repo only and never ship to the server.
+Three Playwright suites, 73 checks. They are for this repo only and never ship
+to the server. The price feed is always stubbed, so the suites are hermetic.
 
 ```sh
 cd test && npm install && cd ..
 
-python3 dev-server.py 8123 &            # smoke test needs a server
+python3 dev-server.py 8123 &            # smoke + rates need a server
 BASE=http://127.0.0.1:8123/ node test/smoke.mjs
+BASE=http://127.0.0.1:8123/ node test/rates.mjs
 
 node test/update.mjs                    # starts and tears down its own server
 ```
 
-`smoke.mjs` (44 checks) walks the handoff's regression list on a Pixel viewport:
+`smoke.mjs` (51 checks) walks the handoff's regression list on a Pixel viewport:
 every head asset resolves, Chrome parses the manifest with no errors, the worker
 activates and precaches the full shell, PIN 162007 unlocks, all five panels
-render, the M/W toggle and period nav work, `"2.5 bnb"` parses to 2.5 BNB with
-the USD locked at the entry's rate, and an offline relaunch still shows the
-ledger — with no console errors anywhere.
+render, both mix donuts draw and keep their colours when the filter changes, the
+M/W toggle and period nav work, `"2.5 bnb"` parses to 2.5 BNB with the USD locked
+at the entry's rate, and an offline relaunch still shows the ledger — with no
+console errors anywhere.
+
+`rates.mjs` (15 checks) covers the live price feed: prices land, stablecoin
+wobble pins to 1, USD→IDR follows, the call is throttled, the switch and the
+manual refresh work — and, the one that matters most, **entries already in the
+books keep the rate and USD they were saved with**.
 
 `update.mjs` (7 checks) ships a second build mid-run and verifies the handover
 described under *Redeploying*.

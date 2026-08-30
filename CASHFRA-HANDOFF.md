@@ -34,6 +34,7 @@ S = {
   pkgs:[['Xpress Listing',0],...],        // money-in quick buttons; price 0 = user types amount
   team:[['Michael',15],['Shiller 1',10]], // name + default commission %
   rates:[['SOL',190],...], chains:[...], idr:16300,
+  rateAuto:true, rateAt:0,                 // live prices: on/off + last check (ms)
   per:'m'|'w', last:{tok,ch}, lastB, demo, recSkip,
   lockHash, lockSalt, lockLen, lockNum, lockPreset               // access code
 }
@@ -51,7 +52,7 @@ Entry = {
 
 These rules encode how ALFA runs his books. Breaking any of them silently corrupts his numbers.
 
-1. **USD is locked per entry.** `usd = amt × rate` at the entry's date. Never revalue old entries with current prices.
+1. **USD is locked per entry.** `usd = amt × rate` at the entry's date. Never revalue old entries with current prices. Live prices (`fetchRates`) write only `S.rates` and `S.idr`, which *prefill* the rate box on a new entry — they must never touch `t.rate` or `t.usd` on a saved one. `test/rates.mjs` asserts this.
 2. **Received vs booked.** `recv(t)`: unpaid→0, dp→`paid`, paid→`usd`. Money-in totals (`gi`) use *received*. Receivables (`pi`) = Σ(usd − recv) on income.
 3. **Commission is per-recipient.** In the form, **% is the source of truth** — USD is derived (`deal usd × pct/100`) and shown read-only. Typing a team member's name auto-fills their default %. Multiple recipients per deal are supported.
 4. **Commission never double-counts** — the subtlest rule. Two ways to log a commission exist: (a) inside the income entry (`coms[]`, accrual) and (b) as a money-out entry with category **`Team commission`** (payout). Reconciliation is per person name, in `totals()` and `comBook()`:
@@ -66,7 +67,7 @@ These rules encode how ALFA runs his books. Breaking any of them silently corrup
 
 ## Feature inventory (regression checklist)
 
-PIN gate (setup/lock/change/forgot) · brand switcher + inline "New brand" · M/W toggle with 12-bucket strip, ‹›/arrow-key nav, jump-to-period · animated net + growth pills + streak · delta lines on chips · notices (receivables filter, recurring one-tap log w/ undo) · entry form (brand chips, package chips, centered amount w/ "2.5 bnb" parsing, token pills, auto-rate, chain pills, Team-bonus % quick calc, multi-recipient commission with owed-hint "use this amount", announcement link with Open ↗, status/partial, recurring switch) · edit/delete+undo/duplicate/save-&-add-more · search + filters · Commission panel (netted book, per-person Mark-all-paid, per-recipient per-deal toggles, payouts list) · Insights (composition bars, package profitability + margin, cost ratio vs prev, avg deal, run-rate) · Clients · recap ✨ stories · CSV month/all (20 cols incl. Brand, Announce link) · JSON backup/restore · demo seed + wipe w/ undo · keyboard: n, /, Enter, Esc, arrows.
+PIN gate (setup/lock/change/forgot) · brand switcher + inline "New brand" · M/W toggle with 12-bucket strip, ‹›/arrow-key nav, jump-to-period · animated net + growth pills + streak · delta lines on chips · notices (receivables filter, recurring one-tap log w/ undo) · entry form (brand chips, package chips, centered amount w/ "2.5 bnb" parsing, token pills, auto-rate, chain pills, Team-bonus % quick calc, multi-recipient commission with owed-hint "use this amount", announcement link with Open ↗, status/partial, recurring switch) · edit/delete+undo/duplicate/save-&-add-more · search + filters · Commission panel (netted book, per-person Mark-all-paid, per-recipient per-deal toggles, payouts list) · Insights (composition bars, **package & chain mix donuts** with a this-period/all-time toggle, package profitability + margin, cost ratio vs prev, avg deal, run-rate) · Clients · recap ✨ stories · CSV month/all (20 cols incl. Brand, Announce link) · JSON backup/restore · demo seed + wipe w/ undo · keyboard: n, /, Enter, Esc, arrows.
 
 If you refactor, walk this list on mobile viewport before shipping.
 
@@ -74,7 +75,9 @@ If you refactor, walk this list on mobile viewport before shipping.
 
 - claude.ai storage and standalone localStorage are **separate stores**; migration is manual via Backup/Restore JSON.
 - Run-rate is a linear projection; noisy early in a period.
-- IDR display rate is manual (Settings).
+- Live prices come from CoinGecko's free endpoint, at most once every 30 min, and fail silently when offline — the last known prices stay. Only symbols in the `COINS` map are looked up; anything else stays manual.
+- The mix donuts hand out six colour slots by an entity's position in `CATS.in` / `S.chains`, never by rank. Anything past the sixth folds into one grey "Other".
+- IDR display rate follows the price feed while auto-update is on (it rides on `tether.idr`); switch auto off in Settings to pin it by hand.
 - No server, no accounts, no sync — single-user by design. If ALFA later wants multi-device sync, propose a tiny backend then; do not add one now.
 
 ## Deploy checklist

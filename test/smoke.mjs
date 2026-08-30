@@ -8,6 +8,7 @@
 import { chromium, devices } from 'playwright';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { stubFeed, feedHits } from './stub-feed.mjs';
 
 const BASE = process.env.BASE || 'http://127.0.0.1:8123/';
 const ok = [], bad = [];
@@ -20,6 +21,9 @@ const unlock = async p => {
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
 const ctx = await browser.newContext({ ...devices['Pixel 7'] });
+/* the app checks live prices on unlock — stub the feed so the suite is hermetic */
+await stubFeed(ctx);
+
 const page = await ctx.newPage();
 
 const errors = [], failed = [];
@@ -81,6 +85,8 @@ await unlock(page);
 check(await page.locator('#net').isVisible(), 'PIN 162007 unlocks and the app renders');
 const seeded = await page.evaluate(() => JSON.parse(localStorage.getItem('fourtis:ledger:v3')));
 check(seeded.demo === true && seeded.tx.length > 0, `demo ledger seeded (${seeded.tx.length} entries)`);
+const hits = await feedHits(page);
+check(hits === 1, `price feed checked once on unlock (${hits}x)`);
 
 // ── smoke-walk the panels ─────────────────────────────────────────────────
 const openPanel = async () => {
@@ -106,6 +112,31 @@ for (const [key, label] of [['ins', 'Insights'], ['com', 'Commission'], ['cli', 
 await page.click('.hc[data-panel="com"]');
 await page.waitForSelector('#ovPanel.on', { timeout: 3000 });
 check(/commission/i.test(await page.locator('#pTitle').textContent()), 'hero chip opens Commission');
+await closePanel();
+
+// ── package & chain mix donuts ────────────────────────────────────────────
+await openPanel();
+await page.click('#pBody .mi[data-panel="ins"]');
+await page.waitForTimeout(300);
+check((await page.$$('#pBody .mixw svg')).length === 2, 'two donuts render (package + chain)');
+check((await page.$$eval('#pBody .mixh', h => h.map(x => x.textContent.trim()))).join() === 'By package,By chain',
+      'both mixes are labelled');
+const periodRows = await page.$$eval('#pBody .mixr', rs => rs.map(r => ({
+  name: r.querySelector('.nm2').childNodes[0].textContent.trim(),
+  pct: r.querySelector('.pc').textContent.trim(),
+  color: r.querySelector('.dot').style.background })));
+check(periodRows.length >= 2, `mix legend lists every slice: ${periodRows.map(r => r.name + ' ' + r.pct).join(' | ')}`);
+check(periodRows.every(r => /^\d+%$/.test(r.pct)), 'every slice carries a direct % label');
+/* "history": all time must widen the picture without repainting anything */
+const byName = Object.fromEntries(periodRows.map(r => [r.name, r.color]));
+await page.click('#pBody [data-mix="all"]');
+await page.waitForTimeout(250);
+const allRows = await page.$$eval('#pBody .mixr', rs => rs.map(r => ({
+  name: r.querySelector('.nm2').childNodes[0].textContent.trim(),
+  color: r.querySelector('.dot').style.background })));
+check(allRows.length >= periodRows.length, `all time widens the mix: ${periodRows.length} -> ${allRows.length} rows`);
+check(allRows.filter(r => byName[r.name] && byName[r.name] !== r.color).length === 0,
+      'colour follows the entity, not its rank — nothing repaints when the filter changes');
 await closePanel();
 
 // ── period toggle + navigation ────────────────────────────────────────────

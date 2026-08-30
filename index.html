@@ -238,6 +238,19 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .ibar{height:8px;border-radius:4px;background:#F0F0F5;overflow:hidden;margin-top:6px}
 .ibar i{display:block;height:100%;border-radius:4px;background:var(--brand)}
 .ibar.o i{background:var(--out)}
+
+/* ── mix donut ── */
+.mixw{display:flex;justify-content:center;padding:6px 0 10px}
+.mixh{font-size:12.5px;font-weight:700;color:var(--sub);margin:18px 0 2px}
+.mseg{display:inline-flex;gap:3px;background:#F1F1F6;border-radius:12px;padding:3px;margin-bottom:4px}
+.mseg button{padding:7px 13px;border-radius:9px;font-size:12.5px;font-weight:700;color:var(--sub)}
+.mseg button.on{background:var(--card);color:var(--ink);box-shadow:var(--sh-sm)}
+.mixr{display:flex;align-items:center;gap:10px;padding:9px 2px;font-size:13.5px;position:relative}
+.mixr+.mixr::before{content:"";position:absolute;top:0;left:2px;right:2px;height:1px;background:var(--line)}
+.mixr .dot{width:11px;height:11px;border-radius:4px;flex:none}
+.mixr .nm2{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.mixr .sb{font-size:12px;color:var(--faint);font-weight:500;margin-top:2px}
+.mixr .pc{font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--disp);flex:none;font-size:15px}
 .sec{padding:14px 0 18px}
 .sec h3{font-size:13px;color:var(--faint);font-weight:700;margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;font-size:11.5px}
 .tiny{font-size:12.5px;color:var(--sub);line-height:1.6;margin-bottom:12px}
@@ -540,6 +553,14 @@ var CMETA={
  'Other':['\u2728','#EFEFF4']
 };
 function cmeta(c){return CMETA[c]||CMETA['Other'];}
+/* Donut palette. Slots are handed out by an entity's place in its own list
+   (CATS.in for packages, S.chains for chains) \u2014 never by its rank \u2014 so
+   switching period or brand never repaints a slice out from under you.
+   Anything with no slot folds into one grey "Other", so the ring never shows
+   two different things in the same colour. Validated for colour-blind
+   separation as an adjacent series (worst pair \u0394E 9.1). */
+var MIXC=['#5B4FE9','#EB6834','#1BAF7A','#EDA100','#E87BA4','#2A78D6'];
+var MIXO='#A6A6B2';
 var MO=['January','February','March','April','May','June','July','August','September','October','November','December'];
 var MOS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 var DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -552,10 +573,12 @@ var DEF={v:3,tx:[],
  chains:['SOL','BSC','ETH','BASE','TRON','Other'],
  brands:['Fourtis','Dexvra'],
  brand:'Fourtis',
- idr:16300, last:{tok:'SOL',ch:'SOL'}, demo:false, recSkip:'', lockHash:'', lockSalt:'', lockLen:0, lockNum:true, lockPreset:''
+ idr:16300, last:{tok:'SOL',ch:'SOL'}, demo:false, recSkip:'', lockHash:'', lockSalt:'', lockLen:0, lockNum:true, lockPreset:'',
+ rateAuto:true, rateAt:0
 };
 var S=clone(DEF);
 var anchor=new Date(), flt='', editId=null, fType='in', fTokV='SOL', fChainV='SOL', fBrandV='', brandView='', formPkg='', panel='menu', undoBuf=null;
+var mixAll=false, ratePrefill='', rateBusy=false;
 
 function clone(o){return JSON.parse(JSON.stringify(o));}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
@@ -1144,9 +1167,70 @@ function linkOpen(){
   el.innerHTML='<a href="'+esc(v)+'" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;text-decoration:none">Open link \u2197</a>';
  }else{el.classList.add('hide');el.innerHTML='';}
 }
+/* live prices --------------------------------------------------------------
+   This only ever writes S.rates and S.idr, which prefill the rate box on a
+   NEW entry. Entries already logged keep the rate and the USD they were saved
+   with, forever — the books depend on that (CASHFRA-HANDOFF.md, rule 1). */
+var COINS={SOL:'solana',BNB:'binancecoin',ETH:'ethereum',TRX:'tron',USDT:'tether',USDC:'usd-coin',
+ BTC:'bitcoin',MATIC:'matic-network',POL:'polygon-ecosystem-token',AVAX:'avalanche-2',
+ ARB:'arbitrum',OP:'optimism',TON:'the-open-network',SUI:'sui',APT:'aptos',NEAR:'near',
+ ADA:'cardano',DOGE:'dogecoin',XRP:'ripple',LTC:'litecoin',DAI:'dai',BUSD:'binance-usd'};
+var RATE_TTL=18e5;   /* don't hit the feed more than once every 30 min */
+function tidyRate(v){
+ if(!isFinite(v)||v<=0)return 0;
+ /* a stablecoin trading at 0.9997 is oracle noise, not a price: a $350 fee
+    paid in USDT is $350 in the books. A real depeg still comes through. */
+ if(Math.abs(v-1)<=0.02)return 1;
+ return v>=1?+v.toFixed(2):+v.toPrecision(4);
+}
+function relTime(ts){
+ var sec=Math.max(0,Math.round((Date.now()-ts)/1000));
+ if(sec<90)return'just now';
+ var m=Math.round(sec/60);if(m<60)return m+' min ago';
+ var h=Math.round(m/60);if(h<24)return h+(h===1?' hour ago':' hours ago');
+ var d=Math.round(h/24);return d+(d===1?' day ago':' days ago');
+}
+function fetchRates(force){
+ if(rateBusy)return Promise.resolve(0);
+ if(!force){
+  if(!S.rateAuto)return Promise.resolve(0);
+  if(Date.now()-num(S.rateAt)<RATE_TTL)return Promise.resolve(0);
+  /* never move the numbers out from under someone editing them */
+  if(panel==='set'&&$('#ovPanel').classList.contains('on'))return Promise.resolve(0);
+ }
+ if(typeof fetch!=='function')return Promise.resolve(0);
+ var ids=[],seen={};
+ S.rates.forEach(function(r){
+  var id=COINS[String(r[0]||'').toUpperCase()];
+  if(id&&!seen[id]){seen[id]=1;ids.push(id);}
+ });
+ if(!ids.length)return Promise.resolve(0);
+ rateBusy=true;
+ return fetch('https://api.coingecko.com/api/v3/simple/price?ids='+ids.join(',')+'&vs_currencies=usd,idr',
+   {cache:'no-store'})
+ .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
+ .then(function(j){
+  var n=0;
+  S.rates.forEach(function(r){
+   var id=COINS[String(r[0]||'').toUpperCase()];
+   var v=id&&j[id]?tidyRate(num(j[id].usd)):0;
+   if(v&&v!==r[1]){r[1]=v;n++;}
+  });
+  var idr=j.tether&&num(j.tether.idr);
+  if(idr>1000&&Math.round(idr)!==S.idr){S.idr=Math.round(idr);n++;}
+  S.rateAt=Date.now();rateBusy=false;save();
+  if($('#ovForm').classList.contains('on')){
+   /* the form is open: only refresh the box if it still holds what we put there */
+   if(!editId&&$('#fRate').value===ratePrefill){autoRate();calc();}
+  }else{fillStatic();render();}
+  if($('#ovPanel').classList.contains('on')&&panel==='set')repaint();
+  return n;
+ })['catch'](function(){rateBusy=false;return -1;});
+}
 function autoRate(){
  for(var i=0;i<S.rates.length;i++)if(S.rates[i][0]===fTokV){
   $('#fRate').value=(fTokV==='IDR')?(S.idr?String(parseFloat((1/S.idr).toFixed(9))):''):(S.rates[i][1]||'');
+  ratePrefill=$('#fRate').value;
   return;
  }
 }
@@ -1220,6 +1304,7 @@ function openForm(t){
  syncPre();syncBrandPick();togglePct();
  calc();
  $('#ovForm').classList.add('on');
+ if(!t)fetchRates();
  setTimeout(function(){var a=$('#fAmt');a.focus();if(a.select)a.select();},70);
 }
 function closeForm(){$('#ovForm').classList.remove('on');editId=null;}
@@ -1382,9 +1467,71 @@ function panelHtml(){
   mi('\ud83d\uddc2\ufe0f','#E2F6F2','Your data',S.tx.length+' entries \u00b7 CSV \u00b7 backup','data')+
   '</div>';
 }
+function mixColor(k,order){
+ if(k==='Other')return MIXO;
+ var i=order.indexOf(k);
+ return (i>=0&&i<MIXC.length)?MIXC[i]:MIXO;
+}
+function mixRows(list,keyf,order){
+ var m={},tot=0;
+ list.forEach(function(t){
+  if(t.type!=='in')return;
+  var v=recv(t);
+  if(v<=0)return;                      /* unpaid deals are not money you hold */
+  var k=String(keyf(t)||'').trim()||'Other';
+  var i=order.indexOf(k);
+  if(i<0||i>=MIXC.length)k='Other';    /* one grey bucket, never two */
+  if(!m[k])m[k]={v:0,d:0};
+  m[k].v+=v;m[k].d++;tot+=v;
+ });
+ var rows=Object.keys(m).map(function(k){
+  return{k:k,v:m[k].v,d:m[k].d,c:mixColor(k,order),p:tot?m[k].v/tot*100:0};
+ }).sort(function(a,b){return b.v-a.v;});
+ return{rows:rows,tot:tot};
+}
+function donut(g){
+ var size=148,sw=20,r=(size-sw)/2,C=2*Math.PI*r,c=size/2,off=0,solo=g.rows.length<2,seg='';
+ g.rows.forEach(function(x){
+  var len=g.tot?x.v/g.tot*C:0, draw=Math.max(1,len-(solo?0:2));   /* 2px surface gap */
+  seg+='<circle cx="'+c+'" cy="'+c+'" r="'+r.toFixed(2)+'" fill="none" stroke="'+x.c+'" stroke-width="'+sw+'"'+
+   ' stroke-dasharray="'+draw.toFixed(2)+' '+(C-draw).toFixed(2)+'" stroke-dashoffset="'+(-off).toFixed(2)+'">'+
+   '<title>'+esc(x.k)+' — '+Math.round(x.p)+'% · '+usdc(x.v)+'</title></circle>';
+  off+=len;
+ });
+ return'<div class="mixw"><svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'" role="img" aria-label="Share of money received">'+
+  '<circle cx="'+c+'" cy="'+c+'" r="'+r.toFixed(2)+'" fill="none" stroke="#F0F0F5" stroke-width="'+sw+'"/>'+
+  '<g transform="rotate(-90 '+c+' '+c+')">'+seg+'</g>'+
+  '<text x="'+c+'" y="'+(c+1)+'" text-anchor="middle" font-size="20" style="fill:var(--ink);font-family:var(--disp);font-weight:800">'+usdc(g.tot)+'</text>'+
+  '<text x="'+c+'" y="'+(c+18)+'" text-anchor="middle" font-size="10" letter-spacing="1" style="fill:var(--faint);font-weight:700">RECEIVED</text>'+
+  '</svg></div>';
+}
+function mixList(g){
+ return g.rows.map(function(x){
+  return'<div class="mixr"><span class="dot" style="background:'+x.c+'"></span>'+
+   '<span class="nm2">'+esc(x.k)+'<div class="sb">'+usdc(x.v)+' · '+x.d+(x.d===1?' deal':' deals')+'</div></span>'+
+   '<span class="pc">'+Math.round(x.p)+'%</span></div>';
+ }).join('');
+}
+function mixBlock(list){
+ var mp=mixRows(list,function(t){return t.cat;},CATS['in']);
+ var mc=mixRows(list,function(t){return t.chain;},S.chains);
+ if(!mp.rows.length)return'';
+ return'<div class="sec"><h3>Package &amp; chain mix</h3>'+
+  '<p class="tiny">Share of the money you actually received — which package earns it and which chain it came in on. Works itself out from your entries.</p>'+
+  '<div class="mseg"><button data-mix="per"'+(mixAll?'':' class="on"')+'>'+(per==='w'?'This week':'This month')+'</button>'+
+  '<button data-mix="all"'+(mixAll?' class="on"':'')+'>All time</button></div>'+
+  '<div class="mixh">By package</div>'+donut(mp)+mixList(mp)+
+  (mc.rows.length?'<div class="mixh">By chain</div>'+donut(mc)+mixList(mc):'')+
+  '</div>';
+}
 function insHtml(){
  var P=periodTx(0),T=totals(P);
- if(!P.length)return'<p class="tiny" style="padding:10px 0 20px">Nothing in '+esc(perLabel(0))+' yet'+(brandView?' for '+esc(brandView):'')+'. Log a few entries and the analysis appears here \u2014 automatically.</p>';
+ var scoped=S.tx.filter(inScope);
+ if(!P.length){
+  /* nothing this period, but the all-time mix is still worth showing */
+  var head='<p class="tiny" style="padding:10px 0 20px">Nothing in '+esc(perLabel(0))+' yet'+(brandView?' for '+esc(brandView):'')+'. Log a few entries and the analysis appears here \u2014 automatically.</p>';
+  return head+(mixAll?mixBlock(scoped):'');
+ }
  var Pp=periodTx(-1),Tp=totals(Pp),hasPrev=Pp.length>0;
  function group(list,valf){
   var m={},tot=0;
@@ -1438,6 +1585,7 @@ function insHtml(){
  return'<p class="tiny" style="margin-top:4px">'+esc(brandView||'All brands')+' \u00b7 '+esc(perLabel(0))+' \u00b7 updates automatically</p>'+
   (gin.tot?'<div class="sec"><h3>Where money came from</h3>'+bars(gin,false)+'</div>':'')+
   (gout.tot?'<div class="sec"><h3>Where money went</h3>'+bars(gout,true)+'</div>':'')+
+  mixBlock(mixAll?scoped:P)+
   (order.length?'<div class="sec"><h3>Package profitability</h3><p class="tiny">Booked deal values, after commission \u2014 which package actually earns.</p>'+prof+'</div>':'')+
   (eff?'<div class="sec"><h3>Efficiency</h3>'+eff+'</div>':'');
 }
@@ -1501,8 +1649,14 @@ function setHtml(){
     '<button data-rm="'+k+'" data-i="'+i+'" aria-label="Remove">\u2715</button></div>';}).join('')+
    '<button class="bs" data-push="'+k+'" style="margin-top:4px;font-size:12.5px;padding:8px 14px">+ Add row</button>';
  }
+ var stamp=S.rateAuto
+  ?(S.rateAt?'Checked '+relTime(num(S.rateAt)):'Not checked yet \u2014 opens the feed on the next entry')
+  :'Off \u2014 the prices below stay exactly as you set them';
  return'<div class="sec"><h3>Token prices \u00b7 USD per coin</h3>'+
   '<p class="tiny">Prefills the rate when you log an entry. You can override it per entry \u2014 the USD value locks to the transaction date, so today\u2019s price never changes old records.</p>'+
+  '<div class="kv"><span>Update prices automatically<div class="s">'+esc(stamp)+'</div></span>'+
+   '<label class="sw"><input type="checkbox" id="pAuto"'+(S.rateAuto?' checked':'')+'><i></i></label></div>'+
+  (S.rateAuto?'<div class="wrapb" style="margin:12px 0 2px"><button class="bs" data-rate="now">Refresh prices now</button></div>':'')+
   pair('rates',S.rates,'Symbol','USD')+'</div>'+
   '<div class="sec"><h3>Packages</h3><p class="tiny">These are the quick buttons on the money-in form. Add a price and the button fills the amount for you \u2014 leave it empty to type the amount yourself.</p>'+pair('pkgs',S.pkgs,'Package name','USD')+'</div>'+
   '<div class="sec"><h3>Team \u00b7 default commission %</h3>'+pair('team',S.team,'Name','%')+'</div>'+
@@ -1511,7 +1665,9 @@ function setHtml(){
   '<div class="sec"><h3>App lock</h3><p class="tiny">'+(S.lockHash?'An access code is required every time the app opens.':'No access code is set right now.')+'</p>'+
   '<div class="wrapb"><button class="bs" data-lock="change">'+(S.lockHash?'Change code':'Set a code')+'</button>'+
   (S.lockHash?'<button class="bs" data-lock="remove" style="color:var(--out)">Remove code</button>':'')+'</div></div>'+
-  '<div class="sec"><h3>USD \u2192 IDR rate</h3><div class="ed o"><input class="nm" type="number" id="pIdr" value="'+(S.idr||'')+'"><span></span></div></div>';
+  '<div class="sec"><h3>USD \u2192 IDR rate</h3>'+
+  '<p class="tiny">Only used for the \u201c\u2248 Rp\u201d line. '+(S.rateAuto?'Kept up to date with the token prices above.':'Manual while auto-update is off.')+'</p>'+
+  '<div class="ed o"><input class="nm" type="number" id="pIdr" value="'+(S.idr||'')+'"></div></div>';
 }
 function dataHtml(){
  return'<div class="sec"><p class="tiny">Everything saves automatically on this device. Download a backup now and then \u2014 if you switch browsers or clear browsing data, your records are gone.</p>'+
@@ -1526,7 +1682,7 @@ function dataHtml(){
 
 /* global events */
 document.addEventListener('click',function(e){
- var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-rs],[data-lock]');
+ var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-rs],[data-mix],[data-rate],[data-lock]');
  if(!el)return;
  var d=el.dataset;
  if(d.lock!==undefined){
@@ -1538,6 +1694,15 @@ document.addEventListener('click',function(e){
    $('#ovPanel').classList.remove('on');
    gate('change');
   }
+  return;
+ }
+ if(d.mix!==undefined){mixAll=(d.mix==='all');repaint();return;}
+ if(d.rate!==undefined){
+  toast('Checking prices\u2026');
+  fetchRates(true).then(function(n){
+   if(n<0)toast('Could not reach the price feed \u2014 the rates below are unchanged');
+   else toast(n?n+(n===1?' price updated':' prices updated'):'Prices are already up to date');
+  });
   return;
  }
  if(d.ed!==undefined){var t=findTx(d.ed);if(t)openForm(t);return;}
@@ -1594,6 +1759,12 @@ document.addEventListener('input',function(e){
  if(e.target.id==='pIdr'){S.idr=num(e.target.value);save();render();}
 });
 document.addEventListener('change',function(e){
+ if(e.target.id==='pAuto'){
+  S.rateAuto=e.target.checked;save();
+  if(S.rateAuto)fetchRates(true).then(function(){repaint();});
+  else repaint();
+  return;
+ }
  if(e.target.id!=='rsFile')return;
  var f=e.target.files[0];if(!f)return;
  var r=new FileReader();
@@ -1819,6 +1990,7 @@ function hideGate(){$('#gate').classList.remove('on');gateMode='';}
 function startApp(){
  if(!appStarted){appStarted=true;fillStatic();fillCats();render();}
  hideGate();
+ fetchRates();
  if(toastAfterUnlock){toast(toastAfterUnlock);toastAfterUnlock='';}
 }
 function gerr(m){
