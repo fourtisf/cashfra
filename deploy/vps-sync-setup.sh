@@ -100,8 +100,8 @@ install -m 644 "$SRC/deploy/sync-server.js" "$LIB/sync-server.js"
 # A re-run with no arguments must not quietly wipe the settings, so anything
 # not given is read back out of the unit file that is already installed.
 from_unit(){ [ -f "$UNIT" ] && sed -n "s/^Environment=$1=\\(.*\\)$/\\1/p" "$UNIT" | head -1 || true; }
+WANT_MAIL=${MAIL_MODE:-}          # asked for on THIS run, before the unit is read
 ALLOW=${ALLOW:-$(from_unit ALLOW)}
-MAIL_MODE=${MAIL_MODE:-$(from_unit MAIL_MODE)}
 SMTP_HOST=${SMTP_HOST:-$(from_unit SMTP_HOST)}
 SMTP_PORT=${SMTP_PORT:-$(from_unit SMTP_PORT)}
 SMTP_USER=${SMTP_USER:-$(from_unit SMTP_USER)}
@@ -121,7 +121,13 @@ case "$ALLOW" in
   *) echo "that does not look like an email address: $ALLOW" >&2; exit 1 ;;
 esac
 
-if [ -n "$SMTP_HOST" ] && [ -n "$SMTP_USER" ] && [ -n "$SMTP_PASS" ]; then
+# An explicit MAIL_MODE on the command line wins over whatever the unit holds.
+# Without this there is no way back out of a bad mail setup: the settings are
+# read back from the unit every run, so a wrong password would reinstall itself
+# for ever.
+if [ "$WANT_MAIL" = file ]; then
+  MAIL_MODE=file; SMTP_HOST=''; SMTP_USER=''; SMTP_PASS=''; RESEND_KEY=''
+elif [ -n "$SMTP_HOST" ] && [ -n "$SMTP_USER" ] && [ -n "$SMTP_PASS" ]; then
   MAIL_MODE=smtp
 elif [ -n "$RESEND_KEY" ]; then
   MAIL_MODE=resend
@@ -246,6 +252,35 @@ if [ "$badtok" != 401 ] || [ "$badmail" != 403 ]; then
   else
     echo "    The service is not answering on 127.0.0.1:$PORT either:"
     journalctl -u cashfra-sync -n 15 --no-pager
+  fi
+  exit 1
+fi
+
+# Saying "mail goes out over smtp" without having sent anything is the same
+# mistake as reporting success on a failed check. Send one and see.
+first=${ALLOW%%,*}
+echo
+echo "==> asking it to send you a code, to see whether mail really works"
+sent=$(code -X POST -H "$JSON" -d "{\"action\":\"auth.start\",\"email\":\"$first\"}" "https://$DOMAIN/sync")
+if [ "$sent" = 200 ] && [ "$MAIL_MODE" != file ]; then
+  say "a real code to $first" "sent  ok"
+elif [ "$sent" = 200 ]; then
+  say "a real code to $first" "written to $DATA/outbox"
+elif [ "$sent" = 429 ]; then
+  say "a real code to $first" "429  rate limit — five an hour; the setup is fine"
+else
+  say "a real code to $first" "$sent  FAILED"
+  echo
+  echo "!!  Sign-in will not work until mail does. What the service said:"
+  journalctl -u cashfra-sync -n 8 --no-pager | sed 's/^/      /'
+  echo
+  if [ "$MAIL_MODE" = smtp ]; then
+    echo "    'Username and Password not accepted' means SMTP_PASS is not an app"
+    echo "    password. Make one at myaccount.google.com -> Security -> App"
+    echo "    passwords (2FA must be on first), then re-run with it."
+    echo
+    echo "    Or park mail for now and read codes off the disk instead:"
+    echo "      sudo MAIL_MODE=file bash $0"
   fi
   exit 1
 fi

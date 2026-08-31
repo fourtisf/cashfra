@@ -149,7 +149,15 @@ against `127.0.0.1` to say whether the fault is nginx or the service, and does
 **not** print sign-in instructions — a check that failed must not read as
 success. Re-running is safe: the port, the allow-list and the mail settings are
 read back from the installed unit, so `sudo bash deploy/vps-sync-setup.sh` with
-no arguments changes nothing.
+no arguments changes nothing. An explicit `MAIL_MODE=file` wins over what the
+unit holds and clears the SMTP settings — without that there is no way out of a
+bad mail setup, since a wrong password would reinstall itself every run.
+
+The last thing it does is **ask the service to send a real code to the first
+allow-listed address**. Announcing that mail works without having sent anything
+is the same mistake as reporting success on a failed check; a wrong app
+password looks like a working setup right up until the first sign-in. If the
+send fails it prints what the service said and stops.
 
 Then on each device: **Menu → Settings → Sign in**. The server address is
 already filled in (the app is served from it), so it is an email, then the six
