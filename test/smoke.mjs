@@ -9,6 +9,7 @@ import { chromium, devices } from 'playwright';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { stubFeed, feedHits } from './stub-feed.mjs';
+import { loadSample } from './helpers.mjs';
 
 const BASE = process.env.BASE || 'http://127.0.0.1:8123/';
 const ok = [], bad = [];
@@ -83,8 +84,12 @@ await page.click('#gPad [data-k="9"]');
 await page.click('#gPad [data-k="del"]');
 await unlock(page);
 check(await page.locator('#net').isVisible(), 'PIN 162007 unlocks and the app renders');
+/* a real ledger starts empty — nothing is ever invented on first run */
+const firstRun = await page.evaluate(() => JSON.parse(localStorage.getItem('fourtis:ledger:v3')));
+check(firstRun.tx.length === 0 && firstRun.demo === false, `first run opens on an empty book (${firstRun.tx.length} entries)`);
+await loadSample(page);
 const seeded = await page.evaluate(() => JSON.parse(localStorage.getItem('fourtis:ledger:v3')));
-check(seeded.demo === true && seeded.tx.length > 0, `demo ledger seeded (${seeded.tx.length} entries)`);
+check(seeded.demo === true && seeded.tx.length > 0, `sample data loads only when asked (${seeded.tx.length} entries)`);
 const hits = await feedHits(page);
 check(hits === 1, `price feed checked once on unlock (${hits}x)`);
 

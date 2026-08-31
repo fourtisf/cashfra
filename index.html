@@ -740,7 +740,7 @@ var DEF={v:3,tx:[],
  brands:['Fourtis','Dexvra'],
  brand:'Fourtis',
  idr:16300, last:{tok:'SOL',ch:'SOL'}, demo:false, recSkip:'', lockHash:'', lockSalt:'', lockLen:0, lockNum:true, lockPreset:'',
- rateAuto:true, rateAt:0, bkAt:0, goal:0, lockIdle:300, contacts:{}, caps:[],
+ rateAuto:true, rateAt:0, bkAt:0, goal:0, lockIdle:300, contacts:{}, caps:[], seedFix:'',
  wallets:[['SOL',''],['BSC',''],['ETH',''],['BASE',''],['TRON','']], invNote:''
 };
 var S=clone(DEF);
@@ -789,7 +789,11 @@ var ST=(function(){
  }catch(e){return null;}
 })();
 function load(){
- if(!ST){seed();return Promise.resolve();}
+ /* a device with nothing stored has no legacy sample data to sweep, so mark
+    the sweep done — otherwise the first reload would clear samples the owner
+    loaded on purpose */
+ S.seedFix='1';
+ if(!ST)return Promise.resolve();   /* no storage: start empty, never invent entries */
  return ST.get(KEY).then(function(r){
   if(r&&r.value){
    S=Object.assign(clone(DEF),JSON.parse(r.value));
@@ -802,6 +806,15 @@ function load(){
    S.tx.forEach(function(t){if(!t.brand){t.brand=S.brands[0];fix=true;}});
    if(normalizeTx())fix=true;
    if(S.brand===undefined)S.brand=S.brands[0];
+   /* One-time sweep of the sample entries an earlier build seeded on first
+      run. S.demo is only still true while every entry is untouched sample
+      data, so real work is never in scope. The marker keeps it to once per
+      device — otherwise sample data loaded on purpose would vanish on the
+      next launch. */
+   if(S.seedFix!=='1'){
+    if(S.demo===true&&S.tx.length){S.tx=[];S.demo=false;}
+    S.seedFix='1';
+   }
    save();
    return;
   }
@@ -810,7 +823,7 @@ function load(){
   return ST.get(OLD).then(function(r){
    if(r&&r.value){migrate(JSON.parse(r.value));return;}
    throw 0;
-  })['catch'](function(){seed();});
+  })['catch'](function(){});   /* nothing stored yet: an empty book, not a fake one */
  });
 }
 function migrate(o){
@@ -2113,12 +2126,17 @@ function dataHtml(){
   '<p class="tiny" style="margin:10px 0 0">'+(num(S.bkAt)?'Last backup '+esc(relTime(num(S.bkAt)))+'.':'No backup taken yet.')+'</p>'+
   '<input type="file" id="rsFile" accept="application/json,.json" class="hide"></div>'+
   '<div class="sec"><h3>'+S.tx.length+(S.tx.length===1?' entry stored':' entries stored')+'</h3>'+
-  '<button class="bs" data-wipe="1" style="color:var(--out)">Delete all entries</button></div>';
+  (S.tx.length
+   ?'<button class="bs" data-wipe="1" style="color:var(--out)">Delete all entries</button>'
+   :'<p class="tiny">Nothing logged yet. Load a few sample entries if you want to see how the'+
+    ' charts read \u2014 they are clearly marked and one tap clears them.</p>'+
+    '<button class="bs" data-seed="1">Load sample data</button>')+
+  '</div>';
 }
 
 /* global events */
 document.addEventListener('click',function(e){
- var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-mix],[data-cshare],[data-rate],[data-lock]');
+ var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-seed],[data-mix],[data-cshare],[data-rate],[data-lock]');
  if(!el)return;
  var d=el.dataset;
  if(d.lock!==undefined){
@@ -2179,6 +2197,14 @@ document.addEventListener('click',function(e){
  if(d.push!==undefined){
   S[d.push].push((d.push==='chains'||d.push==='brands')?'':(d.push==='wallets'?['','']:['',0]));
   save();repaint();return;
+ }
+ if(d.seed!==undefined){
+  if(S.tx.length){toast('Clear the ledger first');return;}
+  seed();save();fillStatic();render();repaint();
+  toast(S.tx.length+' sample entries loaded','Undo',function(){
+   S.tx=[];S.demo=false;save();render();repaint();
+  });
+  return;
  }
  if(d.csv!==undefined){csv(d.csv==='all');return;}
  if(d.bk!==undefined||d.bks!==undefined){

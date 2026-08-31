@@ -134,9 +134,9 @@ build. `test/update.mjs` checks exactly this.
 
 - [ ] `https://cashfra.com/` loads and PIN **162007** opens it — then change the code in
       Settings → App lock.
-- [ ] The app opens on a seeded demo ledger. Once real bookkeeping starts, clear
-      it with *Clear and start fresh* on the sample-entries banner (or Your data
-      → *Delete all entries*). Both offer an undo.
+- [ ] The app opens on an empty ledger — nothing is invented. Sample entries
+      are behind Your data → *Load sample data* if you ever want to see how the
+      charts read; *Clear and start fresh* on the banner removes them again.
 - [ ] DevTools → Application → Manifest: no errors, icons listed.
 - [ ] Application → Service Workers: `sw.js` is *activated and running*.
 - [ ] Android Chrome shows *Install app* / *Add to Home screen*; the installed
@@ -176,7 +176,7 @@ Opening `index.html` over `file://` still works — the app falls back to
 
 ## Tests
 
-Six Playwright suites, 156 checks. They are for this repo only and never ship
+Six Playwright suites, 160 checks. They are for this repo only and never ship
 to the server. The price feed is always stubbed, so the suites are hermetic.
 
 ```sh
@@ -192,7 +192,7 @@ BASE=http://127.0.0.1:8123/ node test/landing.mjs
 node test/update.mjs                    # starts and tears down its own server
 ```
 
-`smoke.mjs` (51 checks) walks the handoff's regression list on a Pixel viewport:
+`smoke.mjs` (52 checks) walks the handoff's regression list on a Pixel viewport:
 every head asset resolves, Chrome parses the manifest with no errors, the worker
 activates and precaches the full shell, PIN 162007 unlocks, all five panels
 render, both mix donuts draw and keep their colours when the filter changes, the

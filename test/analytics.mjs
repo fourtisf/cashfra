@@ -7,6 +7,7 @@
  */
 import { chromium, devices } from 'playwright';
 import { stubFeed } from './stub-feed.mjs';
+import { loadSample } from './helpers.mjs';
 
 const BASE = process.env.BASE || 'http://127.0.0.1:8123/';
 const ok = [], bad = [];
@@ -53,6 +54,7 @@ const money = s => Number(String(s).replace(/[^0-9.-]/g, '')) * (/^-|^−/.test(
 
 await page.goto(BASE, { waitUntil: 'load' });
 await unlock();
+await loadSample(page);
 await page.waitForTimeout(500);
 
 // what the ledger actually says, computed here rather than trusted from the page

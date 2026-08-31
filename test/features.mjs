@@ -5,6 +5,7 @@
  */
 import { chromium, devices } from 'playwright';
 import { stubFeed, feedDown } from './stub-feed.mjs';
+import { loadSample } from './helpers.mjs';
 
 const BASE = process.env.BASE || 'http://127.0.0.1:8123/';
 const ok = [], bad = [];
@@ -52,6 +53,7 @@ const closePanel = async () => {
 
 await page.goto(BASE, { waitUntil: 'load' });
 await unlock();
+await loadSample(page);
 await page.waitForTimeout(600);
 
 // ══ 1. stale price hint ══════════════════════════════════════════════════
@@ -73,8 +75,22 @@ check(await page.locator('#rateHint').isHidden(), 'refreshing from the hint clea
 check(await page.inputValue('#fRate') === '190', 'the refreshed price lands in the rate box');
 await page.click('#fX'); await page.waitForTimeout(200);
 
+// ══ 1b. sample data left by an earlier build is swept, once ══════════════
+/* the state an older build produced: sample entries, untouched, no marker */
+await patch({ seedFix: '', demo: true });
+check((await page.evaluate(() => JSON.parse(localStorage.getItem('fourtis:ledger:v3')).tx.length)) === 0,
+      'sample entries seeded by an earlier build are cleared on first launch');
+await loadSample(page);
+await patch({ bkAt: Date.now() });
+check((await page.evaluate(() => JSON.parse(localStorage.getItem('fourtis:ledger:v3')).tx.length)) > 0,
+      'and samples loaded on purpose afterwards survive a relaunch');
+/* the sweep must never reach real work: demo is false the moment an entry is touched */
+await patch({ seedFix: '', demo: false });
+const kept = await page.evaluate(() => JSON.parse(localStorage.getItem('fourtis:ledger:v3')).tx.length);
+check(kept > 0, `real entries are never swept (${kept} kept)`);
+
 // ══ 2. backup reminder ═══════════════════════════════════════════════════
-await patch({ demo: false });
+await patch({ demo: false, bkAt: 0 });   /* explicit: an earlier section set it */
 let alert = await page.locator('#alert').innerText();
 check(/No backup yet/.test(alert), `never-backed-up warns: "${(alert.match(/No backup yet[^\n]*/) || [''])[0]}"`);
 await patch({ demo: false, bkAt: Date.now() - 20 * DAY });
