@@ -1,8 +1,8 @@
 # Cashfra
 
 ALFA's private bookkeeping app for the token-listing business — money in, money
-out, per-person commissions, recurring costs and growth analytics, across
-brands, behind a PIN. Listings are cash in full, up front; the app is built
+out, per-person commissions, shared costs, recurring costs and growth
+analytics, across brands, behind a PIN. Listings are cash in full, up front; the app is built
 around that and says so when an entry disagrees.
 
 This repo is the deployable version of the approved prototype. The app itself is
@@ -237,7 +237,7 @@ Opening `index.html` over `file://` still works — the app falls back to
 
 ## Tests
 
-Eight Playwright suites, 213 checks. They are for this repo only and never ship
+Nine Playwright suites, 250 checks. They are for this repo only and never ship
 to the server. The price feed is always stubbed, so the suites are hermetic.
 
 ```sh
@@ -250,6 +250,7 @@ BASE=http://127.0.0.1:8123/ node test/features.mjs
 BASE=http://127.0.0.1:8123/ node test/analytics.mjs
 BASE=http://127.0.0.1:8123/ node test/landing.mjs
 BASE=http://127.0.0.1:8123/ node test/rules.mjs
+BASE=http://127.0.0.1:8123/ node test/brands.mjs
 
 node test/update.mjs                    # starts and tears down its own server
 node test/sync.mjs                      # and its own sync service
@@ -300,6 +301,20 @@ arranged differently, is left alone. The same deal typed twice is named before
 it is saved — matched on client, amount, coin, date and brand, and never
 against the entry being edited. And a client opens into every deal they have
 done, with *Back* returning to the client list before it leaves the panel.
+
+`brands.mjs` (37 checks) covers the two things a second brand and a team
+made necessary. A cost that runs both books — a database, an API key — can be
+marked **Shared**, and is then carried by every brand at the share of the money
+each one brought in over the same period. The suite logs a real $60 shared cost
+and checks that each brand is shown only its slice, that the slices add back to
+$60 and no more, that the whole bill still shows with every brand on screen,
+and that the brand-vs-brand table says out loud how much of each column is
+shared. It also checks the chip is not offered where the idea does not apply:
+never on money in, and never on commission, which is earned on one deal under
+one brand. The rest opens a person in the Commission panel and reads their
+statement against the ledger — earned, owed, one line per deal, the revenue
+they touched, and their **effective rate** measured against the default agreed
+with them — then copies it as text he can send them.
 
 `update.mjs` (7 checks) ships a second build mid-run and verifies the handover
 described under *Redeploying*.
