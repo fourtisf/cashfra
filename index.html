@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-08-31-11">
+<meta name="cashfra-build" content="2026-08-31-12">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -140,6 +140,10 @@ button,label.sw,.row,.gk{cursor:pointer;-webkit-tap-highlight-color:transparent;
 .dm{padding:20px 8px 0;font-size:12.5px;color:var(--faint);text-align:center}
 .dm button{color:var(--sub);font-weight:600;text-decoration:underline;text-underline-offset:3px;font-size:12.5px}
 .zero{background:var(--card);border-radius:22px;box-shadow:var(--sh-sm);padding:44px 24px;text-align:center}
+.join{background:var(--brand-soft);border-radius:22px;padding:26px 24px;text-align:center;margin-top:14px}
+.join .e{font-size:30px;display:block;margin-bottom:8px}
+.join h3{font-size:16px;font-weight:800;margin:0 0 6px}
+.join p{font-size:13px;color:var(--faint);margin:0 0 16px;line-height:1.5}
 .zero .e{font-size:40px;display:block;margin-bottom:10px}
 .zero h3{font-size:16px;font-weight:700;margin-bottom:6px}
 .zero p{color:var(--sub);font-size:13.5px;margin:0 auto 18px;max-width:280px}
@@ -1156,7 +1160,8 @@ function renderList(M){
   el.innerHTML='<div class="zero"><span class="e">'+(q||flt?'\ud83d\udd0e':'\ud83c\udf31')+'</span>'+
    '<h3>'+(q||flt?'Nothing here':'No entries in '+perLabel(0))+'</h3>'+
    '<p>'+(q||flt?'Try clearing the search or filter.':'Log your first listing or expense and it will show up here.')+'</p>'+
-   (q||flt?'<button class="bs" data-reset="1">Show everything</button>':'<button class="bp" data-add="1">+ New entry</button>')+'</div>'+demoLine();
+   (q||flt?'<button class="bs" data-reset="1">Show everything</button>':'<button class="bp" data-add="1">+ New entry</button>')+'</div>'+
+   signInCard()+demoLine();
   return;
  }
  var g={},order=[];
@@ -1170,6 +1175,17 @@ function renderList(M){
  '<div class="tot"><span>'+L.length+(L.length===1?' entry':' entries')+'</span>'+
  '<span>in <b class="pos">'+usd(T.gi)+'</b> &nbsp; out <b class="neg">'+usd(T.go+T.gc)+'</b> &nbsp; net <b class="'+(T.net>=0?'pos':'neg')+'">'+usd(T.net)+'</b></span></div>'+
  demoLine();
+}
+/* A new phone opens on a PIN screen, is let in, and finds an empty book with
+   nothing to say it is not signed in. ALFA hit exactly that and thought the
+   sign-in was broken. Only shown where it is certainly true — no entries at
+   all, and no account on this device — so it never nags a device in use. */
+function signInCard(){
+ if(syncOn()||S.tx.length)return'';
+ return'<div class="join"><span class="e">\u2601\ufe0f</span>'+
+  '<h3>New device?</h3>'+
+  '<p>Sign in and everything you have already logged appears here \u2014 nothing to copy across by hand.</p>'+
+  '<button class="bp" data-panel="set" data-goto="sync">Sign in</button></div>';
 }
 function demoLine(){
  return S.demo?'<div class="dm">These are sample entries \u00b7 <button data-wipe="1">Clear and start fresh</button></div>':'';
@@ -2763,7 +2779,17 @@ document.addEventListener('click',function(e){
  if(d.flt!==undefined){flt=(flt===d.flt)?'':d.flt;render();return;}
  if(d.flt2!==undefined){flt=d.flt2;render();return;}
  if(d.recur!==undefined){logRecur();return;}
- if(d.panel!==undefined){openPanel(d.panel);return;}
+ if(d.panel!==undefined){
+  openPanel(d.panel);
+  /* Settings is long, and the sign-in is near the bottom. Sending someone
+     there without taking them to it is barely better than not sending them. */
+  if(d.goto==='sync')setTimeout(function(){
+   var el=$('#pSyncUrl')||$('#pAuthMail');
+   if(el&&el.closest('.sec'))el.closest('.sec').scrollIntoView({block:'center'});
+   if(el&&el.focus)el.focus({preventScroll:true});
+  },60);
+  return;
+ }
  if(d.wipe!==undefined){
   if(!S.tx.length){toast('Already empty');return;}
   var bak=S.tx.slice();S.tx=[];S.demo=false;save();render();

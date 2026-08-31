@@ -253,6 +253,22 @@ const ledger = d => d.page.evaluate(() => JSON.parse(localStorage.getItem('fourt
 
 const A = await device('A');
 check(!(await ledger(A)).sync.token, 'a fresh install is not signed in to anything');
+
+/* A new phone lands on an empty book with no hint that it is not signed in.
+   ALFA hit exactly that and thought the sign-in was broken, so the empty
+   state has to say it — and the button has to land on the right section, not
+   just somewhere in a long Settings page. */
+check(await A.page.locator('.join').isVisible(), 'a new device is told it can sign in');
+check(/New device/.test(await A.page.textContent('.join')), 'in words that name the situation');
+await A.page.click('.join [data-panel="set"]');
+await A.page.waitForSelector('#pAuthMail', { timeout: 3000 });
+await A.page.waitForTimeout(600);            // the scroll is deferred a tick
+check(await A.page.locator('#pAuthMail').evaluate(el => {
+  const r = el.getBoundingClientRect();
+  return r.top > 0 && r.bottom < window.innerHeight;
+}), 'and that button lands on the sign-in itself, not the top of Settings');
+await A.page.click('#pClose');
+await A.page.waitForTimeout(300);
 await settings(A);
 check((await A.page.locator('#pSyncTok').count()) === 0,
       'and shows no token box to copy anything into');

@@ -159,7 +159,11 @@ is the same mistake as reporting success on a failed check; a wrong app
 password looks like a working setup right up until the first sign-in. If the
 send fails it prints what the service said and stops.
 
-Then on each device: **Menu → Settings → Sign in**. The server address is
+Then on each device: **Menu → Settings → Sign in**. A device with an empty
+book and no account says so on its own screen — a new phone opens on the PIN
+gate, is let in, and finds nothing, with no hint that signing in is what brings
+the book across. Its **Sign in** button lands on the sign-in section itself,
+not the top of a long Settings page. The server address is
 already filled in (the app is served from it), so it is an email, then the six
 digits that arrive by mail. Every device signed in to the same address shares
 one book, and the history appears on its own — nothing is copied by hand.
@@ -289,7 +293,7 @@ Opening `index.html` over `file://` still works — the app falls back to
 
 ## Tests
 
-Ten Playwright suites, 283 checks. They are for this repo only and never ship
+Ten Playwright suites, 286 checks. They are for this repo only and never ship
 to the server. The price feed is always stubbed, so the suites are hermetic.
 
 ```sh
@@ -392,7 +396,7 @@ against the fixed code, then re-run with the fix removed: an assertion nobody
 has watched fail is not yet a test, and the first version of the race check
 passed either way.
 
-`login.mjs` (33 checks) covers signing in. Its stand-in for nginx is routed
+`login.mjs` (36 checks) covers signing in. Its stand-in for nginx is routed
 the way ALFA's server actually is — an exact match on `/sync`, nothing under
 it — so the suite would have caught the sub-path failure instead of his phone
 doing it. The server's own rules first: an
