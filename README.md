@@ -116,7 +116,10 @@ Only the app is published: no `.md`, no `deploy/`, no `test/`, no `.git`.
 ### Redeploying
 
 Always `./bump-version.sh` first — the shell is served cache-first, and the
-cache name is what tells installed copies that a new build exists.
+cache name is what tells installed copies that a new build exists. It stamps
+the same number into `index.html`, which the app shows under **Your data →
+Version**, so "which build is this phone running" is answerable on the phone
+rather than by guessing.
 
 The handover is deliberately quiet: the new shell is precached in the
 background, the open screen is **never** reloaded out from under you, and the
@@ -176,7 +179,7 @@ Opening `index.html` over `file://` still works — the app falls back to
 
 ## Tests
 
-Six Playwright suites, 160 checks. They are for this repo only and never ship
+Six Playwright suites, 162 checks. They are for this repo only and never ship
 to the server. The price feed is always stubbed, so the suites are hermetic.
 
 ```sh

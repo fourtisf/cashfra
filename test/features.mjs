@@ -127,6 +127,19 @@ check(/Backup saved/.test(await page.locator('#tMsg').textContent()), 'and it co
 await page.addInitScript(() => { delete window.claude; });
 await page.reload({ waitUntil: 'load' }); await unlock(); await page.waitForTimeout(200);
 
+// ══ 2b. the app can say which build it is running ════════════════════════
+await page.click('#moreBtn'); await page.waitForSelector('#ovPanel.on');
+await page.click('#pBody .mi[data-panel="data"]'); await page.waitForTimeout(250);
+const ver = await page.$$eval('#pBody .sec', secs => {
+  const s = secs.find(x => /^Version$/i.test(x.querySelector('h3')?.textContent.trim() || ''));
+  return s ? s.innerText.replace(/\s+/g, ' ').trim() : '';
+});
+const swBuild = await page.evaluate(async u => (await (await fetch(u)).text()).match(/var BUILD = '(.+)';/)[1], new URL('sw.js', BASE).href);
+check(ver.includes(swBuild), `the app states its build, and it matches sw.js: "${ver.split('·')[0].trim()}" vs ${swBuild}`);
+check(/offline-ready|not cached|no offline/.test(ver), `and whether the offline cache is live: "${ver}"`);
+await page.click('#pClose');
+await page.waitForFunction(() => !document.getElementById('ovPanel').classList.contains('on'), null, { timeout: 3000 });
+
 // ══ 3. auto-lock ═════════════════════════════════════════════════════════
 const hide = async () => page.evaluate(() => {
   Object.defineProperty(document, 'visibilityState', { get: () => 'hidden', configurable: true });

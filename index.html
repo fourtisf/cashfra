@@ -10,6 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
+<meta name="cashfra-build" content="2026-08-31-4">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -2125,6 +2126,8 @@ function dataHtml(){
   '<button class="bs" data-rs="1">Restore</button></div>'+
   '<p class="tiny" style="margin:10px 0 0">'+(num(S.bkAt)?'Last backup '+esc(relTime(num(S.bkAt)))+'.':'No backup taken yet.')+'</p>'+
   '<input type="file" id="rsFile" accept="application/json,.json" class="hide"></div>'+
+  '<div class="sec"><h3>Version</h3><p class="tiny" style="margin:0">Build <b>'+esc(buildId())+'</b>'+
+  ' \u00b7 '+esc(swState())+'<br>If a fix you are expecting is missing, this is the number to check.</p></div>'+
   '<div class="sec"><h3>'+S.tx.length+(S.tx.length===1?' entry stored':' entries stored')+'</h3>'+
   (S.tx.length
    ?'<button class="bs" data-wipe="1" style="color:var(--out)">Delete all entries</button>'
@@ -2374,6 +2377,14 @@ $('#story').addEventListener('click',function(e){
  }
 });
 
+function buildId(){
+ var m=document.querySelector('meta[name="cashfra-build"]');
+ return (m&&m.content)||'unknown';
+}
+function swState(){
+ if(!('serviceWorker' in navigator))return'no offline cache';
+ return navigator.serviceWorker.controller?'running offline-ready':'not cached yet';
+}
 function canShareFiles(){
  try{return !!(navigator.share&&navigator.canShare&&navigator.canShare(
   {files:[new File([''],'t.json',{type:'application/json'})]}));}catch(e){return false;}

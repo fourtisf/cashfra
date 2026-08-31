@@ -24,4 +24,8 @@ else
 fi
 
 sed -i.bak "s/^var BUILD = '.*';$/var BUILD = '$next';/" "$SW" && rm -f "$SW.bak"
+# the app shows this number in Your data, so it has to move with the worker
+if [ -f index.html ]; then
+  sed -i.bak "s|<meta name=\"cashfra-build\" content=\"[^\"]*\">|<meta name=\"cashfra-build\" content=\"$next\">|" index.html && rm -f index.html.bak
+fi
 echo "BUILD $current -> $next"
