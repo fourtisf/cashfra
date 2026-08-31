@@ -76,6 +76,14 @@ check(mob.bg==='rgba(0, 0, 0, 0)'&&mob.pad==='0px',`phone keeps the approved bar
 /* sub-pixel layout on a scaled device viewport, so allow a hair either way */
 check(Math.abs(mob.key-70)<1.5,`keypad untouched at ${mob.key.toFixed(1)}px (css says 70)`);
 check(mob.hint==='none','the keyboard hint stays off a phone');
+/* iOS read two quick taps on the keypad as double-tap-to-zoom, which is what
+   entering a six-digit code at normal speed looks like */
+const touch=await m.evaluate(()=>{
+  const of=s=>getComputedStyle(document.querySelector(s)).touchAction;
+  return{key:of('.gk'),add:of('#addBtn2'),more:of('#moreBtn'),gate:getComputedStyle(document.getElementById('gate')).overscrollBehaviorY};});
+check(touch.key==='manipulation'&&touch.add==='manipulation'&&touch.more==='manipulation',
+      `tapping fast cannot zoom the page (keypad ${touch.key}, buttons ${touch.add})`);
+check(touch.gate==='contain','and the lock screen does not rubber-band the page behind it');
 for(const c of '162007') await m.click(`#gPad [data-k="${c}"]`);
 await m.waitForFunction(()=>!document.getElementById('gate').classList.contains('on'),null,{timeout:5000});
 check(true,'tapping the pad still unlocks');

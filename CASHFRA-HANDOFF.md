@@ -93,6 +93,7 @@ If you refactor, walk this list on mobile viewport before shipping.
 - The brand table deliberately ignores `brandView` — comparing brands is the whole point of it.
 - Comparison rows bucket by category, and take commission from `totals().gc` so the netting rule in business rule 4 stays the single source of truth for it.
 - Client contacts are keyed by the client's name: rename a client and the contact does not follow.
+- Tappable controls carry `touch-action:manipulation`; without it iOS Safari reads a fast six-digit code entry as double-tap-to-zoom. Pinch zoom is untouched.
 - Leaving the app always covers the screen (so the Android app-switcher snapshot is safe); `lockIdle` only decides whether the code is asked for again on return.
 - Live prices come from CoinGecko's free endpoint, at most once every 30 min, and fail silently when offline — the last known prices stay. Only symbols in the `COINS` map are looked up; anything else stays manual.
 - The mix donuts hand out six colour slots by an entity's position in `CATS.in` / `S.chains`, never by rank. Anything past the sixth folds into one grey "Other".

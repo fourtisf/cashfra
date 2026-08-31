@@ -40,7 +40,11 @@
 html{-webkit-text-size-adjust:100%}
 body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
 button,input,select,textarea{font:inherit;color:inherit;font-family:inherit;background:none;border:none}
-button{cursor:pointer;-webkit-tap-highlight-color:transparent}
+/* touch-action:manipulation stops iOS Safari reading two quick taps as a
+   double-tap-to-zoom — which it did every time a six-digit code was entered at
+   normal speed. Pinch to zoom still works; only the double-tap gesture is off,
+   and the old 300ms tap delay goes with it. */
+button,label.sw,.row,.gk{cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 :focus-visible{outline:3px solid rgba(91,79,233,.4);outline-offset:2px;border-radius:8px}
 .tn{font-variant-numeric:tabular-nums}
 .pos{color:var(--in)} .neg{color:var(--out)}
@@ -361,7 +365,7 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .shint{position:absolute;bottom:16px;left:0;right:0;text-align:center;font-size:11.5px;color:rgba(255,255,255,.5);font-weight:600}
 
 /* ── access gate ── */
-.gate{position:fixed;top:0;left:0;right:0;bottom:0;z-index:300;background:var(--grad);display:none;align-items:center;justify-content:center;padding:28px;overflow:hidden}
+.gate{position:fixed;top:0;left:0;right:0;bottom:0;z-index:300;background:var(--grad);display:none;align-items:center;justify-content:center;padding:28px;overflow:hidden;overscroll-behavior:contain}
 .gate.on{display:flex}
 .gate::before,.gate::after{content:"";position:absolute;border-radius:50%;pointer-events:none}
 .gate::before{width:480px;height:480px;right:-160px;top:-220px;background:radial-gradient(circle,rgba(255,255,255,.16),transparent 68%)}
