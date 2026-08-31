@@ -175,6 +175,34 @@ const prize = caps.find(c => /Community prize/.test(c.text));
 check(!prize.over && !/over by/.test(prize.foot), `a cap that is not breached stays quiet: "${prize.right}"`);
 await closePanel();
 
+// ══ 4b. day-by-day calendar ══════════════════════════════════════════════
+await insights();
+const cal = await page.$$eval('#pBody .cal i', cells => cells.map(c => ({
+  day: c.textContent.trim(), empty: c.classList.contains('e'),
+  bg: c.style.background || '', title: c.getAttribute('title') || '' })));
+const days = cal.filter(c => !c.empty);
+const monthLen = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+check(days.length === monthLen, `one cell per day of the month (${days.length} of ${monthLen})`);
+check(cal.length % 7 === 0 || cal.length >= monthLen, `grid starts on the right weekday (${cal.length - days.length} leading blanks)`);
+const tinted = days.filter(c => c.bg);
+check(tinted.length > 0 && tinted.length < days.length, `only days with movement are tinted (${tinted.length} of ${days.length})`);
+check(tinted.every(c => /14, 159, 79|229, 72, 77/.test(c.bg)), 'money in tints green, money out red');
+check(days.every(c => /·/.test(c.title)), 'every day carries its own figure');
+
+// ══ 4c. break-even, concentration, deal spread ═══════════════════════════
+const eff = await page.$$eval('#pBody .sec', secs => {
+  const s = secs.find(x => /Efficiency/i.test(x.querySelector('h3')?.textContent || ''));
+  return [...s.querySelectorAll('.kv')].map(k => k.innerText.replace(/\s+/g, ' ').trim());
+});
+const be = eff.find(t => /Break-even/.test(t));
+check(!!be, `break-even is reported: "${be}"`);
+check(/covered|to go/.test(be), 'and says whether costs were covered or what is left');
+const conc = eff.find(t => /Biggest client/.test(t));
+check(!!conc && /%/.test(conc), `client concentration is reported: "${conc}"`);
+const spread = eff.find(t => /Deal sizes/.test(t));
+check(!!spread && /typical/.test(spread), `deal spread shows the range and the typical: "${spread}"`);
+await closePanel();
+
 // ══ 5. client profit and repeat rate ═════════════════════════════════════
 await page.click('#moreBtn'); await page.waitForSelector('#ovPanel.on');
 await page.click('#pBody .mi[data-panel="cli"]'); await page.waitForTimeout(300);

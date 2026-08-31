@@ -179,7 +179,7 @@ Opening `index.html` over `file://` still works — the app falls back to
 
 ## Tests
 
-Six Playwright suites, 162 checks. They are for this repo only and never ship
+Six Playwright suites, 171 checks. They are for this repo only and never ship
 to the server. The price feed is always stubbed, so the suites are hermetic.
 
 ```sh
@@ -215,7 +215,7 @@ invoice sheet — including that an unpaid deal reads as a *Quotation*, that the
 wallet matched to the deal's chain appears, and that the copied text is
 pasteable into a chat.
 
-`analytics.mjs` (30 checks) covers the comparison and allocation views, and
+`analytics.mjs` (39 checks) covers the comparison and allocation views, and
 checks the arithmetic against the ledger rather than just that a section
 appeared: money in matches, the cost bars total the real cost ratio when
 switched to share-of-income, a cap is measured against money in and flagged
