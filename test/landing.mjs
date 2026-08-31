@@ -88,6 +88,93 @@ check(touch.gate==='contain','and the lock screen does not rubber-band the page 
 for(const c of '162007') await m.click(`#gPad [data-k="${c}"]`);
 await m.waitForFunction(()=>!document.getElementById('gate').classList.contains('on'),null,{timeout:5000});
 check(true,'tapping the pad still unlocks');
+
+// ── the notch and the home indicator ─────────────────────────────────────
+/* Installed to the home screen there is no browser chrome, so the page starts
+   under the clock and the battery. ALFA's header collided with both, and the
+   toast landed inside the button bar rather than above it. Neither shows in a
+   desktop browser, where the insets are zero — so the app reads them through
+   --sat/--sab and this pretends to be a phone that has them. */
+/* the lock screen is a full-bleed overlay of its own, and ignored the insets
+   entirely — the logo ran into the notch and the footer sat on the home bar */
+await m.evaluate(() => {
+  document.documentElement.style.setProperty('--sat', '47px');
+  document.documentElement.style.setProperty('--sab', '34px');
+  document.getElementById('gate').classList.add('on');
+});
+await m.waitForTimeout(150);
+const gate = await m.evaluate(() => {
+  const g = document.getElementById('gate').getBoundingClientRect();
+  const logo = document.querySelector('.glogo').getBoundingClientRect();
+  const note = document.querySelector('.gnote').getBoundingClientRect();
+  return { logoTop: logo.top, noteBottom: note.bottom, h: window.innerHeight, gh: g.height };
+});
+check(gate.logoTop >= 47, `the lock screen keeps its logo below the notch (${Math.round(gate.logoTop)}px)`);
+check(gate.h - gate.noteBottom >= 34,
+      `and its footer above the home bar (${Math.round(gate.h - gate.noteBottom)}px)`);
+await m.evaluate(() => {
+  document.getElementById('gate').classList.remove('on');
+  document.documentElement.style.removeProperty('--sat');
+  document.documentElement.style.removeProperty('--sab');
+});
+await m.waitForTimeout(120);
+
+const flat = await m.locator('.hd').evaluate(e => e.getBoundingClientRect().top);
+await m.evaluate(() => {
+  document.documentElement.style.setProperty('--sat', '47px');   // a notch
+  document.documentElement.style.setProperty('--sab', '34px');   // a home bar
+});
+await m.waitForTimeout(150);
+const notched = await m.locator('.hd').evaluate(e => e.getBoundingClientRect().top);
+check(notched - flat === 47,
+      `the header moves clear of the status bar on a notched phone (${flat} -> ${notched})`);
+
+/* the toast lives inside the app's closure; its position is pure CSS, so
+   showing the element is enough to measure where it lands */
+await m.evaluate(() => {
+  const t = document.getElementById('toast');
+  document.getElementById('tMsg').textContent = 'Entry updated';
+  t.classList.add('on');
+});
+await m.waitForTimeout(350);
+const box = await m.evaluate(() => {
+  const t = document.getElementById('toast').getBoundingClientRect();
+  const btn = document.getElementById('addBtn2').getBoundingClientRect();
+  return { toastBottom: t.bottom, btnTop: btn.top, btnBottom: btn.bottom, h: window.innerHeight };
+});
+check(box.toastBottom <= box.btnTop + 1,
+      `the toast sits above the button, not on it (ends ${Math.round(box.toastBottom)}, button starts ${Math.round(box.btnTop)})`);
+check(box.h - box.btnBottom >= 34,
+      `and the button clears the home indicator (${Math.round(box.h - box.btnBottom)}px below it)`);
+
+/* a full-height sheet starts just below where a notch ends; "just below" is
+   not clearance, and its close button is the first thing a thumb reaches for */
+await m.evaluate(() => {
+  document.documentElement.style.setProperty('--sat', '47px');
+  document.documentElement.style.setProperty('--sab', '34px');
+});
+await m.click('#moreBtn');
+await m.waitForSelector('#ovPanel.on', { timeout: 3000 });
+await m.waitForTimeout(300);
+const sheet = await m.evaluate(() => {
+  const s = document.querySelector('#ovPanel .sheet').getBoundingClientRect();
+  const x = document.getElementById('pX').getBoundingClientRect();
+  return { top: s.top, xTop: x.top };
+});
+check(sheet.top >= 47 && sheet.xTop >= 47,
+      `a full-height sheet and its close button stay under the notch (${Math.round(sheet.top)}, ${Math.round(sheet.xTop)})`);
+await m.click('#pClose');
+await m.waitForTimeout(300);
+
+const clear = await m.evaluate(async () => {
+  window.scrollTo(0, document.body.scrollHeight);
+  await new Promise(r => setTimeout(r, 200));
+  const last = document.querySelector('#list .tot') || document.querySelector('#list .zero');
+  const bar = document.querySelector('.stick').getBoundingClientRect();
+  return last.getBoundingClientRect().bottom <= bar.top + 1;
+});
+check(clear, 'and the end of the list is not left behind the bar');
+
 await b.close();
 console.log(ok.map(s=>'  PASS  '+s).join('\n'));
 if(bad.length){console.log('\n'+bad.map(s=>'  FAIL  '+s).join('\n'));process.exit(1);}

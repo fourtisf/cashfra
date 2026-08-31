@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-08-31-14">
+<meta name="cashfra-build" content="2026-08-31-15">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -18,6 +18,12 @@
 
 <style>
 :root{
+  /* The notch and the home indicator, named once. Read through variables
+     rather than env() at each site so a test can pretend to be a phone with
+     a notch — otherwise this is only ever verified by looking at a screenshot
+     of ALFA's actual iPhone, which is how it shipped broken. */
+  --sat:env(safe-area-inset-top,0px);
+  --sab:env(safe-area-inset-bottom,0px);
   --bg:#F4F4F8;
   --card:#FFFFFF;
   --ink:#15151F;
@@ -51,7 +57,7 @@ button,label.sw,.row,.gk{cursor:pointer;-webkit-tap-highlight-color:transparent;
 .pos{color:var(--in)} .neg{color:var(--out)}
 .hide{display:none!important}
 
-.app{max-width:640px;margin:0 auto;padding:0 18px 132px}
+.app{max-width:640px;margin:0 auto;padding:var(--sat) 18px calc(132px + var(--sab))}
 
 /* ── header ── */
 .hd{display:flex;align-items:center;justify-content:space-between;padding:20px 2px 16px}
@@ -158,7 +164,7 @@ button,label.sw,.row,.gk{cursor:pointer;-webkit-tap-highlight-color:transparent;
 .bt.red{color:var(--out)}
 .bt.red:hover{background:var(--out-soft)}
 
-.stick{position:fixed;left:0;right:0;bottom:0;padding:12px 18px calc(14px + env(safe-area-inset-bottom));background:linear-gradient(180deg,rgba(244,244,248,0),var(--bg) 42%);z-index:40;display:flex;justify-content:center;pointer-events:none}
+.stick{position:fixed;left:0;right:0;bottom:0;padding:12px 18px calc(14px + var(--sab));background:linear-gradient(180deg,rgba(244,244,248,0),var(--bg) 42%);z-index:40;display:flex;justify-content:center;pointer-events:none}
 .stick .bp{width:100%;max-width:604px;padding:15px;font-size:15.5px;pointer-events:auto;text-align:center}
 
 /* ── sheets ── */
@@ -173,7 +179,7 @@ button,label.sw,.row,.gk{cursor:pointer;-webkit-tap-highlight-color:transparent;
 .sh .x{margin-left:auto;width:32px;height:32px;border-radius:11px;background:#F1F1F6;color:var(--sub);font-size:13px;display:grid;place-items:center}
 .sh .x:hover{background:#E8E8EF;color:var(--ink)}
 .sbody{padding:2px 22px 8px;overflow-y:auto;flex:1;overscroll-behavior:contain}
-.sfoot{display:flex;gap:9px;align-items:center;padding:14px 22px calc(18px + env(safe-area-inset-bottom))}
+.sfoot{display:flex;gap:9px;align-items:center;padding:14px 22px calc(18px + var(--sab))}
 .gap{flex:1}
 
 /* ── form ── */
@@ -397,7 +403,7 @@ button.kv:active{opacity:.6}
 .shint{position:absolute;bottom:16px;left:0;right:0;text-align:center;font-size:11.5px;color:rgba(255,255,255,.5);font-weight:600}
 
 /* ── access gate ── */
-.gate{position:fixed;top:0;left:0;right:0;bottom:0;z-index:300;background:var(--grad);display:none;align-items:center;justify-content:center;padding:28px;overflow:hidden;overscroll-behavior:contain}
+.gate{position:fixed;top:0;left:0;right:0;bottom:0;z-index:300;background:var(--grad);display:none;align-items:center;justify-content:center;padding:calc(28px + var(--sat)) 28px calc(28px + var(--sab));overflow:hidden;overscroll-behavior:contain}
 .gate.on{display:flex}
 .gate::before,.gate::after{content:"";position:absolute;border-radius:50%;pointer-events:none}
 .gate::before{width:480px;height:480px;right:-160px;top:-220px;background:radial-gradient(circle,rgba(255,255,255,.16),transparent 68%)}
@@ -517,21 +523,22 @@ body.locked{overflow:hidden}
  .gnote{margin-top:12px}
 }
 
-.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;border-radius:16px;padding:12px 16px 12px 18px;font-size:13.5px;font-weight:600;z-index:200;opacity:0;pointer-events:none;transition:.22s cubic-bezier(.2,.9,.3,1);display:flex;align-items:center;gap:16px;max-width:calc(100vw - 36px);box-shadow:0 12px 34px rgba(21,21,40,.3)}
+.toast{position:fixed;left:50%;bottom:calc(96px + var(--sab));transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;border-radius:16px;padding:12px 16px 12px 18px;font-size:13.5px;font-weight:600;z-index:200;opacity:0;pointer-events:none;transition:.22s cubic-bezier(.2,.9,.3,1);display:flex;align-items:center;gap:16px;max-width:calc(100vw - 36px);box-shadow:0 12px 34px rgba(21,21,40,.3)}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
 .toast button{color:#B9AFFF;font-weight:700;font-size:13px;white-space:nowrap}
 
 @media(max-width:600px){
-  .app{padding:0 14px 138px}
+  .app{padding:var(--sat) 14px calc(138px + var(--sab))}
   .hnet{font-size:38px}
   .seh{flex-wrap:wrap}
   .srch{width:100%;max-width:none;order:3;margin-top:10px}
   .ov{padding:0;align-items:flex-end}
-  .sheet{max-width:100%;max-height:94vh;border-radius:26px 26px 0 0;animation:up .24s cubic-bezier(.2,.9,.3,1)}
+  /* 94vh starts a hair below a notch and a hair is not clearance */
+  .sheet{max-width:100%;max-height:calc(94vh - var(--sat));border-radius:26px 26px 0 0;animation:up .24s cubic-bezier(.2,.9,.3,1)}
   @keyframes up{from{transform:translateY(30px)}}
   .grab{display:block}
   .two{grid-template-columns:1fr}
-  .toast{left:14px;right:14px;transform:translateY(20px);max-width:none;bottom:96px}
+  .toast{left:14px;right:14px;transform:translateY(20px);max-width:none}
   .toast.on{transform:translateY(0)}
   .row+.row::before{left:66px}
 }

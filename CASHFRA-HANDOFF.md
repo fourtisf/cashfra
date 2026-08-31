@@ -109,6 +109,7 @@ If you refactor, walk this list on mobile viewport before shipping.
 - Comparison rows bucket by category, and take commission from `totals().gc` so the netting rule in business rule 6 stays the single source of truth for it.
 - A shared cost is split by money **received** in the same period, so the same bill can land differently in two different months. That is the point — it follows the work — but it means a brand's past figures move if an old income entry is corrected.
 - Client contacts are keyed by the client's name: rename a client and the contact does not follow.
+- The notch and the home indicator are read through `--sat` / `--sab`, defined once on `:root` from `env(safe-area-inset-*)`. Use those variables, never `env()` inline — a test can set a variable and cannot set an env(), and this shipped broken precisely because nothing could check it. Watch the phone media query especially: it once re-declared `.app{padding:0 14px 138px}` and silently undid the fix on the only screens that needed it.
 - Tappable controls carry `touch-action:manipulation`; without it iOS Safari reads a fast six-digit code entry as double-tap-to-zoom. Pinch zoom is untouched.
 - Leaving the app always covers the screen (so the Android app-switcher snapshot is safe); `lockIdle` only decides whether the code is asked for again on return.
 - Live prices come from CoinGecko's free endpoint, at most once every 30 min, and fail silently when offline — the last known prices stay. Only symbols in the `COINS` map are looked up; anything else stays manual.

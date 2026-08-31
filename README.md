@@ -264,7 +264,7 @@ Opening `index.html` over `file://` still works — the app falls back to
 
 ## Tests
 
-Ten Playwright suites, 273 checks. They are for this repo only and never ship
+Ten Playwright suites, 280 checks. They are for this repo only and never ship
 to the server. The price feed is always stubbed, so the suites are hermetic.
 
 ```sh
@@ -313,13 +313,22 @@ are viewing one, and a client's headline number is net of commission. It also
 reads the *painted* colour of each delta, not the class name — a more specific
 rule further down the stylesheet had quietly greyed all of them out.
 
-`landing.mjs` (17 checks) covers the lock screen — the page the domain
+`landing.mjs` (24 checks) covers the lock screen — the page the domain
 actually opens on — at 1440px and on a phone at once: the card treatment and
 keyboard hint appear on the desktop, the code goes in from the keyboard, no
 scrollbar sits behind the lock, the keypad's invisible spacer key stays
 invisible, motion is off under `prefers-reduced-motion` without leaving the
 card hidden, tapping fast cannot trigger iOS double-tap zoom, and the approved
 phone layout is unmoved by any of it.
+
+It also covers the notch and the home indicator, which are invisible in a
+desktop browser because the insets are zero there — which is why the header
+shipped colliding with ALFA's clock and battery once the app was installed to
+his home screen, and the toast landed inside the button bar. The app reads
+both through `--sat` / `--sab` rather than `env()` at each site, so the suite
+can set them and check that the header, the lock screen, a full-height sheet,
+the toast and the bottom button all move clear. A screenshot of one phone is
+not a test.
 
 `rules.mjs` (22 checks) covers the three guards that keep the book honest. A
 listing opens as *Paid in full*, and changing that by hand is answered with the
