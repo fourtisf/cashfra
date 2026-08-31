@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-08-31-7">
+<meta name="cashfra-build" content="2026-08-31-8">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -1453,7 +1453,7 @@ function syncReq(method,body){
  });
 }
 /* pull, merge, push — the whole exchange, safe to call at any time */
-function syncNow(quiet){
+function syncNow(quiet,retry){
  if(!syncOn()||syncBusy)return Promise.resolve(false);
  syncBusy=true;
  if(!quiet)syncSet('Syncing…');
@@ -1480,7 +1480,18 @@ function syncNow(quiet){
   delete payload.sync;delete payload.lockHash;delete payload.lockSalt;   /* the code stays on the device */
   return syncReq('PUT',{base:num(r.body.version),data:payload});
  }).then(function(r){
-  if(r.code===409)throw new Error('Another device wrote first — try again');
+  if(r.code===409){
+   /* The other device wrote between our read and our write. It handed its
+      blob back with the refusal, so merge that and go round once more — a
+      device that gives up here stays quietly behind until its next edit,
+      which is exactly the silence this whole feature exists to remove. */
+   if(!retry&&r.body&&r.body.data&&Array.isArray(r.body.data.tx)){
+    S.tx=mergeTx(S.tx,r.body.data.tx);fillStatic();render();
+    syncBusy=false;
+    return syncNow(quiet,true);
+   }
+   throw new Error('Another device wrote first \u2014 try again');
+  }
   if(r.code!==200)throw new Error('Server said '+r.code);
   if(!S.sync)S.sync={url:'',token:'',ver:0,at:0};
   S.sync.ver=num(r.body.version);S.sync.at=num(r.body.at);
@@ -2826,7 +2837,12 @@ function gerr(m){
    the Android app-switcher snapshot, and asks for the code again when the app
    has been away longer than the grace period. */
 document.addEventListener('visibilitychange',function(){
- if(!appStarted||!S.lockHash)return;
+ if(!appStarted)return;
+ /* Coming back is the moment the other device's work is most likely waiting.
+    Pull here too, not only through startApp — otherwise a phone with no
+    access code set never picks anything up until it is edited. */
+ if(document.visibilityState==='visible'&&!$('#gate').classList.contains('on'))syncNow(true);
+ if(!S.lockHash)return;
  if(document.visibilityState==='hidden'){
   hidAt=Date.now();
   if($('#gate').classList.contains('on'))return;   /* already showing something */

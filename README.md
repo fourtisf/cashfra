@@ -147,8 +147,13 @@ What it is and is not:
   wrote. The honest cost: **a deletion only spreads while the other device is
   online**, because a merge that deletes could eat somebody's work.
 - Every write carries the version it was based on. A stale write gets a 409
-  and the current blob back, so the loser merges and retries instead of
-  overwriting.
+  and the current blob back, and the loser **merges and retries inside the
+  same exchange**. A device that gave up there would sit on its entry until
+  it was next edited — silently out of step, which is the failure this whole
+  feature exists to remove.
+- A device **pulls when the app comes back to the foreground**, not only when
+  it is unlocked. With the access code removed there is no unlock to hang it
+  on, and that device would otherwise only learn of a change by being edited.
 - A token names a file, and the file must already exist — the service never
   opens accounts. A second book is `sudo -u cashfra tee
   /var/lib/cashfra/<token>.json <<< '{"version":0,"at":0,"data":null}'`;
@@ -232,7 +237,7 @@ Opening `index.html` over `file://` still works — the app falls back to
 
 ## Tests
 
-Eight Playwright suites, 206 checks. They are for this repo only and never ship
+Eight Playwright suites, 213 checks. They are for this repo only and never ship
 to the server. The price feed is always stubbed, so the suites are hermetic.
 
 ```sh
@@ -299,7 +304,7 @@ done, with *Back* returning to the client list before it leaves the panel.
 `update.mjs` (7 checks) ships a second build mid-run and verifies the handover
 described under *Redeploying*.
 
-`sync.mjs` (13 checks) runs two browser contexts as two devices against a real
+`sync.mjs` (20 checks) runs two browser contexts as two devices against a real
 `sync-server.js` on a throwaway data directory, behind a thirty-line stand-in
 for nginx so the app and `/sync` share one origin under a live service worker —
 the production topology, and the only arrangement in which the worker can be
@@ -308,5 +313,15 @@ entered, that a device pushes on its own, that a second device pulls the whole
 ledger, that neither device's entries are lost to the other's merge, that two
 syncs back to back both land, that the access code and the token never reach
 the server, and that an unknown token gets a 401.
+
+Two of its checks are about not giving up. One forces the exact race — another
+device writing between this device's read and its write — and reads the whole
+exchange back, so the pass depends on the refusal being followed by a retry
+that lands, not on a later background sync quietly rescuing the result. The
+other removes the access code from one device and checks that merely
+reopening the app is enough to pick the other's work up. Both were written
+against the fixed code, then re-run with the fix removed: an assertion nobody
+has watched fail is not yet a test, and the first version of the race check
+passed either way.
 
 Set `CHROME_PATH` if Playwright can't find a browser.

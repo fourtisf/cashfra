@@ -149,7 +149,7 @@ check(new Set(merged.tx.map(t => t.id)).size === merged.tx.length, 'no entry is 
 /* the second exchange must see the version the first one wrote. A service
    worker serving the first GET from its cache would hide it, and every write
    after that would be refused as stale. */
-const syncStatus = async d => {
+const syncStatus = async (d, times = 2) => {
   await d.page.click('#moreBtn');
   await d.page.waitForSelector('#ovPanel.on', { timeout: 3000 });
   await d.page.click('#pBody .mi[data-panel="set"]');
@@ -157,7 +157,7 @@ const syncStatus = async d => {
   const line = d.page.locator('#pBody .sec').filter({ hasText: 'Sync across devices' })
                      .locator('p.tiny').last();
   const out = [];
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < times; i++) {
     await d.page.click('#pBody [data-sync="now"]');
     await d.page.waitForFunction(
       () => !/Syncing/.test(document.querySelector('#pBody [data-sync="now"]')
@@ -174,6 +174,93 @@ check(await controlled(A), 'the service worker is running, as it is on the live 
 const twice = await syncStatus(A);
 check(twice.every(t => /^Synced/.test(t)), `two syncs back to back both land (${twice.join(' | ')})`);
 
+// ── a device that loses the race does not stay behind ─────────────────────
+/* Force the one window that matters: another device writes between this
+   device's read and its write. The device has to recover inside that single
+   exchange — one that gives up here sits on its entry until it is next
+   edited, silently out of step, which is the failure sync exists to prevent.
+   So the whole exchange is recorded and read back: one refusal, one retry,
+   and the entry landing. A later background sync cannot be what rescues it. */
+await A.page.evaluate(([u, t]) => {
+  const real = window.fetch;
+  window.__armed = 0; window.__log = [];
+  window.fetch = function (url, opt) {
+    const tok = opt && opt.headers && opt.headers['X-Cashfra-Token'];
+    const isGet = !opt || !opt.method || opt.method === 'GET';
+    return real.apply(this, arguments).then(async res => {
+      if (tok) window.__log.push((opt.method || 'GET') + ' -> ' + res.status +
+        (opt.body ? ' tx=' + JSON.parse(opt.body).data.tx.length : ''));
+      if (tok && isGet && window.__armed) {
+        window.__armed = 0;                       // exactly one interception
+        const cur = await (await real(u, { headers: { 'X-Cashfra-Token': t } })).json();
+        await real(u, { method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'X-Cashfra-Token': t },
+          body: JSON.stringify({ base: cur.version,
+            data: Object.assign({}, cur.data, { invNote: 'written by the other device' }) }) });
+      }
+      return res;
+    });
+  };
+}, [SYNC, TOKEN]);
+
+await addEntry(A, '$RACED', 5);
+await A.page.waitForFunction(() =>
+  JSON.parse(localStorage.getItem('fourtis:ledger:v3')).tx.some(t => t.party === '$RACED'),
+  null, { timeout: 5000 });
+const held = (await ledger(A)).tx.length;
+await A.page.evaluate(() => { window.__armed = 1; window.__log = []; });
+const racedMsg = (await syncStatus(A, 1))[0];
+const log = await A.page.evaluate(() => window.__log);
+check(log.length === 4 && /PUT -> 409/.test(log[1]) && /PUT -> 200/.test(log[3]),
+      `refused once, then carried through on the same exchange (${log.join(' | ')})`);
+check(/^Synced/.test(racedMsg), `and it reads as synced, not as an error (${racedMsg})`);
+const after = await A.page.evaluate(async ([u, t]) => {
+  const r = await fetch(u, { headers: { 'X-Cashfra-Token': t } });
+  return (await r.json()).data;
+}, [SYNC, TOKEN]);
+check(after.tx.some(t => t.party === '$RACED') && after.tx.length === held,
+      `the entry it was holding reaches the server (${after.tx.length} of ${held})`);
+check(after.invNote === 'written by the other device',
+      'and the other device\u2019s write is not overwritten by the retry');
+
+// ── a device with no access code still picks work up ──────────────────────
+/* Coming back to the app is when the other device's work is most likely
+   waiting. With a code set, unlocking pulls; with the code removed there is
+   no unlock to hang it on, so the pull has to ride on the app becoming
+   visible again — otherwise that device only ever learns of a change by
+   being edited itself. */
+await B.page.click('#moreBtn');
+await B.page.waitForSelector('#ovPanel.on', { timeout: 3000 });
+await B.page.click('#pBody .mi[data-panel="set"]');
+await B.page.waitForSelector('#pBody [data-lock="remove"]', { timeout: 3000 });
+await B.page.click('#pBody [data-lock="remove"]');
+await B.page.click('#tAct');                                   // confirm
+await B.page.waitForTimeout(600);
+await B.page.click('#pClose');
+await B.page.waitForTimeout(400);
+check(!(await ledger(B)).lockHash, 'device B is running with no access code');
+
+await addEntry(A, '$WHILE_AWAY', 6);
+await A.page.waitForTimeout(5200);                             // A pushes on its own
+check((await ledger(B)).tx.every(t => t.party !== '$WHILE_AWAY'),
+      'B has not seen it yet — nothing on B has changed');
+
+/* the same backgrounding the auto-lock suite uses */
+await B.page.evaluate(() => {
+  Object.defineProperty(document, 'visibilityState', { get: () => 'hidden', configurable: true });
+  document.dispatchEvent(new Event('visibilitychange'));
+});
+await B.page.waitForTimeout(400);
+await B.page.evaluate(() => {
+  Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
+  document.dispatchEvent(new Event('visibilitychange'));
+});
+await B.page.waitForFunction(() =>
+  JSON.parse(localStorage.getItem('fourtis:ledger:v3')).tx.some(t => t.party === '$WHILE_AWAY'),
+  null, { timeout: 8000 }).catch(() => {});
+check((await ledger(B)).tx.some(t => t.party === '$WHILE_AWAY'),
+      'reopening the app is enough — the entry is there without touching B');
+
 // ── the access code never leaves the device ───────────────────────────────
 const onServer = await A.page.evaluate(async ([u, t]) => {
   const r = await fetch(u, { headers: { 'X-Cashfra-Token': t } });
@@ -182,7 +269,8 @@ const onServer = await A.page.evaluate(async ([u, t]) => {
 check(onServer && onServer.lockHash === undefined && onServer.lockSalt === undefined,
       'the access code is never sent to the server');
 check(onServer.sync === undefined, 'and neither is the token');
-check(Array.isArray(onServer.tx) && onServer.tx.length === merged.tx.length,
+const local = await ledger(A);          // the race added one more since `merged`
+check(Array.isArray(onServer.tx) && onServer.tx.length === local.tx.length,
       `the server holds the merged ledger (${onServer.tx.length} entries)`);
 
 // ── a bad token is refused ────────────────────────────────────────────────
