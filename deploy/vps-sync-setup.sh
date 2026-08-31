@@ -179,6 +179,39 @@ bad=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 \
        -H "X-Cashfra-Token: nope_nope_nope_nope" "https://$DOMAIN/sync" 2>/dev/null || echo 000)
 say "your token"    "$good$([ "$good" = 200 ] && echo '  ok' || echo '  expected 200')"
 say "a wrong token" "$bad$([ "$bad" = 401 ] && echo '  refused, ok' || echo '  expected 401')"
+
+# An earlier version printed the token and the setup steps even when these two
+# checks had just failed, which reads as success and is not. If /sync is not
+# reaching the service, saying so is the whole job here.
+if [ "$good" != 200 ] || [ "$bad" != 401 ]; then
+  echo
+  echo "!!  /sync is not answering as the sync service. Do NOT enter the token in"
+  echo "    the app yet — it would fail, or worse, look like it worked."
+  echo
+  echo "    Is the service itself right? (expect 200 then 401)"
+  direct_ok=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 \
+              -H "X-Cashfra-Token: $TOKEN" "http://127.0.0.1:$PORT/" 2>/dev/null || echo 000)
+  direct_no=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 \
+              -H "X-Cashfra-Token: nope_nope_nope_nope" "http://127.0.0.1:$PORT/" 2>/dev/null || echo 000)
+  say "  direct, your token" "$direct_ok"
+  say "  direct, wrong one"  "$direct_no"
+  echo
+  if [ "$direct_ok" = 200 ] && [ "$direct_no" = 401 ]; then
+    echo "    The service is fine on 127.0.0.1:$PORT, so nginx is not routing /sync"
+    echo "    to it. Most likely the include did not land in the block that serves"
+    echo "    $DOMAIN over https. Look at where it went:"
+    echo
+    echo "      grep -n 'listen\|server_name\|cashfra-sync' /etc/nginx/sites-available/cashfra"
+    echo
+    echo "    and check what the domain actually returns:"
+    echo "      curl -s https://$DOMAIN/sync -H 'X-Cashfra-Token: $TOKEN' | head -c 120"
+    echo "    HTML there means nginx is still serving the app for that address."
+  else
+    echo "    The service is not answering on 127.0.0.1:$PORT either:"
+    journalctl -u cashfra-sync -n 15 --no-pager
+  fi
+  exit 1
+fi
 echo
 echo "    On every device: Menu -> Settings -> Sync, then enter"
 echo
