@@ -3,22 +3,15 @@
 # phone and the laptop show the same book. Safe to re-run — a second run
 # updates the service and prints the same token back.
 #
-#     sudo ALLOW=you@gmail.com bash deploy/vps-sync-setup.sh [domain]
+#     sudo bash deploy/vps-sync-setup.sh [domain] [access-code]
 #
-# ALLOW is the list of addresses that may sign in, comma separated. There is
-# no sign-up: an address not on it is turned away. On a re-run the list, the
-# mail settings and the port are all read back from the installed service, so
-# a plain `sudo bash deploy/vps-sync-setup.sh` keeps everything as it was.
+# The access code IS the login. Type it on any phone or laptop and the book is
+# there; type it wrong and there is no way in. It defaults to 162007, which is
+# also what a fresh app seeds — so with no arguments at all this just works.
 #
-# To send the codes through Gmail, add an app password (myaccount.google.com ->
-# Security -> App passwords — the normal password will not work):
-#
-#     sudo ALLOW=you@gmail.com MAIL_MODE=smtp SMTP_HOST=smtp.gmail.com \
-#          SMTP_USER=you@gmail.com SMTP_PASS='abcd efgh ijkl mnop' \
-#          bash deploy/vps-sync-setup.sh
-#
-# With no mail settings the code is written to /var/lib/cashfra/outbox instead
-# of sent. That is a working way in over SSH, not a finished setup.
+# The code is never stored here. What is stored is 200,000 rounds of PBKDF2
+# over it, the same value the app computes in the browser, which cannot be
+# turned back into the code.
 #
 # The port is picked from what is free — this box runs other things too — or
 # set PORT=8790 to name one. Run deploy/vps-setup.sh first: this script edits
@@ -27,6 +20,7 @@ set -euo pipefail
 
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 DOMAIN=${1:-cashfra.com}
+CODE=${2:-${CODE:-162007}}
 DATA=/var/lib/cashfra
 LIB=/usr/local/lib/cashfra
 SITE=/etc/nginx/sites-available/cashfra
@@ -96,46 +90,36 @@ install -d -m 700 -o cashfra -g cashfra "$DATA"
 install -d -m 755 "$LIB"
 install -m 644 "$SRC/deploy/sync-server.js" "$LIB/sync-server.js"
 
-# ── who may sign in, and how the code reaches them ──────────────────────────
-# A re-run with no arguments must not quietly wipe the settings, so anything
-# not given is read back out of the unit file that is already installed.
-from_unit(){ [ -f "$UNIT" ] && sed -n "s/^Environment=$1=\\(.*\\)$/\\1/p" "$UNIT" | head -1 || true; }
-WANT_MAIL=${MAIL_MODE:-}          # asked for on THIS run, before the unit is read
-ALLOW=${ALLOW:-$(from_unit ALLOW)}
-SMTP_HOST=${SMTP_HOST:-$(from_unit SMTP_HOST)}
-SMTP_PORT=${SMTP_PORT:-$(from_unit SMTP_PORT)}
-SMTP_USER=${SMTP_USER:-$(from_unit SMTP_USER)}
-SMTP_PASS=${SMTP_PASS:-$(from_unit SMTP_PASS)}
-RESEND_KEY=${RESEND_KEY:-$(from_unit RESEND_KEY)}
-MAIL_FROM=${MAIL_FROM:-$(from_unit MAIL_FROM)}
-
-if [ -z "$ALLOW" ]; then
-  echo
-  echo "Which email address should be able to sign in?"
-  echo "(several: separate them with commas. Nobody else can get in.)"
-  printf '  > '; read -r ALLOW
-fi
-ALLOW=$(printf '%s' "$ALLOW" | tr -d '[:space:]')
-case "$ALLOW" in
-  *@*.*) : ;;
-  *) echo "that does not look like an email address: $ALLOW" >&2; exit 1 ;;
+# ── the key, made from the access code ──────────────────────────────────────
+# The app derives exactly this in the browser; if the two ever disagree ALFA is
+# locked out of his own book with everything looking right on both sides, which
+# is why test/code-login.mjs compares them.
+KEY=$(node -e '
+  const c = require("crypto");
+  process.stdout.write(c.pbkdf2Sync(process.argv[1], "cashfra-sync-v1", 200000, 32, "sha256").toString("hex"));
+' "$CODE")
+case "$KEY" in
+  [0-9a-f]*) : ;;
+  *) echo "could not derive the key from the access code" >&2; exit 1 ;;
 esac
-
-# An explicit MAIL_MODE on the command line wins over whatever the unit holds.
-# Without this there is no way back out of a bad mail setup: the settings are
-# read back from the unit every run, so a wrong password would reinstall itself
-# for ever.
-if [ "$WANT_MAIL" = file ]; then
-  MAIL_MODE=file; SMTP_HOST=''; SMTP_USER=''; SMTP_PASS=''; RESEND_KEY=''
-elif [ -n "$SMTP_HOST" ] && [ -n "$SMTP_USER" ] && [ -n "$SMTP_PASS" ]; then
-  MAIL_MODE=smtp
-elif [ -n "$RESEND_KEY" ]; then
-  MAIL_MODE=resend
+if [ -f "$DATA/$KEY.json" ]; then
+  echo "==> the book for this access code is already here"
 else
-  MAIL_MODE=file
+  # An existing book under a different key means the code changed. Say so
+  # rather than quietly starting an empty second book beside the real one.
+  other=$(find "$DATA" -maxdepth 1 -name '*.json' -printf '%f\n' 2>/dev/null | head -1 || true)
+  if [ -n "$other" ]; then
+    echo "!!  There is already a book on this server, under a different access code."
+    echo "    Starting a new one would leave it stranded. If you meant to change the"
+    echo "    code, do it in the app (Settings -> App lock -> Change code) — the book"
+    echo "    moves with it. If you really want a second, empty book, move the old"
+    echo "    one aside first:  sudo mv $DATA/$other $DATA/$other.bak"
+    exit 1
+  fi
+  printf '{"version":0,"at":0,"data":null}' > "$DATA/$KEY.json"
+  chown cashfra:cashfra "$DATA/$KEY.json"; chmod 600 "$DATA/$KEY.json"
+  echo "==> made the book for this access code"
 fi
-MAIL_FROM=${MAIL_FROM:-${SMTP_USER:-cashfra@$DOMAIN}}
-SMTP_PORT=${SMTP_PORT:-465}
 
 # ── systemd ─────────────────────────────────────────────────────────────────
 cat > "$UNIT" <<UNIT
@@ -149,14 +133,7 @@ Environment=PORT=$PORT
 Environment=HOST=127.0.0.1
 Environment=DATA_DIR=$DATA
 Environment=ORIGIN=https://$DOMAIN
-Environment=ALLOW=$ALLOW
-Environment=MAIL_MODE=$MAIL_MODE
-Environment=MAIL_FROM=$MAIL_FROM
-Environment=SMTP_HOST=$SMTP_HOST
-Environment=SMTP_PORT=$SMTP_PORT
-Environment=SMTP_USER=$SMTP_USER
-Environment=SMTP_PASS=$SMTP_PASS
-Environment=RESEND_KEY=$RESEND_KEY
+Environment=ALLOW=
 User=cashfra
 Group=cashfra
 Restart=always
@@ -219,98 +196,46 @@ systemctl reload nginx
 
 # ── did it actually work? ───────────────────────────────────────────────────
 echo
-say() { printf '    %-24s %s\n' "$1" "$2"; }
+say() { printf '    %-26s %s\n' "$1" "$2"; }
 code(){ curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$@" 2>/dev/null || echo 000; }
-JSON='Content-Type: application/json'
 
-# a token nobody was issued must be refused, and an address nobody allowed too
-badtok=$(code -H "X-Cashfra-Token: never_issued_aaaaaa" "https://$DOMAIN/sync")
-badmail=$(code -X POST -H "$JSON" -d '{"action":"auth.start","email":"nobody@example.invalid"}' "https://$DOMAIN/sync")
-say "an unknown token"  "$badtok$([ "$badtok" = 401 ] && echo '  refused, ok' || echo '  expected 401')"
-say "an unknown address" "$badmail$([ "$badmail" = 403 ] && echo '  refused, ok' || echo '  expected 403')"
+good=$(code -H "X-Cashfra-Token: $KEY" "https://$DOMAIN/sync")
+bad=$(code -H "X-Cashfra-Token: 0000000000000000000000000000000000000000000000000000000000000000" "https://$DOMAIN/sync")
+say "your access code"  "$good$([ "$good" = 200 ] && echo '  ok' || echo '  expected 200')"
+say "a wrong one"       "$bad$([ "$bad" = 401 ] && echo '  refused, ok' || echo '  expected 401')"
 
-if [ "$badtok" != 401 ] || [ "$badmail" != 403 ]; then
+if [ "$good" != 200 ] || [ "$bad" != 401 ]; then
   echo
-  echo "!!  /sync is not answering as the sync service. Do NOT sign in yet —"
-  echo "    it would fail, or worse, look like it worked."
+  echo "!!  /sync is not answering as the sync service. Do NOT rely on sync yet —"
+  echo "    the app would look like it was working."
   echo
-  echo "    Straight at the service, bypassing nginx (expect 401 then 403):"
-  d1=$(code -H "X-Cashfra-Token: never_issued_aaaaaa" "http://127.0.0.1:$PORT/")
-  d2=$(code -X POST -H "$JSON" -d '{"action":"auth.start","email":"nobody@example.invalid"}' "http://127.0.0.1:$PORT/")
-  say "  direct, token"   "$d1"
-  say "  direct, address" "$d2"
+  echo "    Straight at the service, bypassing nginx (expect 200 then 401):"
+  say "  direct, your code" "$(code -H "X-Cashfra-Token: $KEY" "http://127.0.0.1:$PORT/")"
+  say "  direct, a wrong one" "$(code -H 'X-Cashfra-Token: 0000000000000000' "http://127.0.0.1:$PORT/")"
   echo
-  if [ "$d1" = 401 ] && [ "$d2" = 403 ]; then
-    echo "    The service is fine on 127.0.0.1:$PORT, so nginx is not routing /sync"
-    echo "    to it — the include did not land in the block serving $DOMAIN over"
-    echo "    https. Find where it went:"
-    echo
-    echo "      grep -n 'listen\\|server_name\\|cashfra-sync' /etc/nginx/sites-available/cashfra"
-    echo "      curl -s https://$DOMAIN/sync | head -c 120"
-    echo
-    echo "    HTML from that second line means nginx is still serving the app there."
-  else
-    echo "    The service is not answering on 127.0.0.1:$PORT either:"
-    journalctl -u cashfra-sync -n 15 --no-pager
-  fi
-  exit 1
-fi
-
-# Saying "mail goes out over smtp" without having sent anything is the same
-# mistake as reporting success on a failed check. Send one and see.
-first=${ALLOW%%,*}
-echo
-echo "==> asking it to send you a code, to see whether mail really works"
-sent=$(code -X POST -H "$JSON" -d "{\"action\":\"auth.start\",\"email\":\"$first\"}" "https://$DOMAIN/sync")
-if [ "$sent" = 200 ] && [ "$MAIL_MODE" != file ]; then
-  say "a real code to $first" "sent  ok"
-elif [ "$sent" = 200 ]; then
-  say "a real code to $first" "written to $DATA/outbox"
-elif [ "$sent" = 429 ]; then
-  say "a real code to $first" "429  rate limit — five an hour; the setup is fine"
-else
-  say "a real code to $first" "$sent  FAILED"
+  echo "    If those two are right, nginx is not routing /sync. Find where it went:"
+  echo "      grep -n 'listen\\|server_name\\|cashfra-sync' /etc/nginx/sites-available/cashfra"
+  echo "      curl -s https://$DOMAIN/sync | head -c 120"
+  echo "    HTML from that second line means nginx is still serving the app there."
   echo
-  echo "!!  Sign-in will not work until mail does. What the service said:"
-  journalctl -u cashfra-sync -n 8 --no-pager | sed 's/^/      /'
-  echo
-  if [ "$MAIL_MODE" = smtp ]; then
-    echo "    'Username and Password not accepted' means SMTP_PASS is not an app"
-    echo "    password. Make one at myaccount.google.com -> Security -> App"
-    echo "    passwords (2FA must be on first), then re-run with it."
-    echo
-    echo "    Or park mail for now and read codes off the disk instead:"
-    echo "      sudo MAIL_MODE=file bash $0"
-  fi
+  echo "    Otherwise the service is down:"
+  journalctl -u cashfra-sync -n 12 --no-pager | sed 's/^/      /'
   exit 1
 fi
 
 echo
-echo "    Sign in on every device: Menu -> Settings -> Sign in"
+echo "    Done. On every phone and laptop:"
 echo
-echo "      Server   https://$DOMAIN/sync   (already filled in for you)"
-echo "      Email    ${ALLOW%%,*}"
+echo "      1. open  https://$DOMAIN/"
+echo "      2. type  $CODE"
 echo
-echo "    A six-digit code arrives by email; it lasts ten minutes. Every device"
-echo "    signed in to the same address shares one book."
-echo "    Your app access code is NOT part of what syncs — each device keeps its own."
+echo "    That is the whole of it. The same code everywhere means the same book"
+echo "    everywhere; a wrong code cannot reach it at all."
 echo
-if [ "$MAIL_MODE" = file ]; then
-  echo "!!  No mail is configured, so codes are NOT being sent. They are written to"
-  echo "    $DATA/outbox instead — readable over SSH, which is a way in but not a"
-  echo "    finished setup. To send them through Gmail, make an app password at"
-  echo "    myaccount.google.com -> Security -> App passwords, then re-run:"
-  echo
-  echo "      sudo MAIL_MODE=smtp SMTP_HOST=smtp.gmail.com \\"
-  echo "           SMTP_USER=${ALLOW%%,*} SMTP_PASS='the app password' \\"
-  echo "           bash $0"
-  echo
-  echo "    Read a code meanwhile:  sudo cat $DATA/outbox/*.txt"
-else
-  echo "    Mail goes out over $MAIL_MODE as $MAIL_FROM."
-fi
-echo "    Who may sign in:      $ALLOW  (re-run with ALLOW=... to change)"
-echo "    Lost a device:        sudo -u cashfra node $LIB/sync-server.js --rotate ${ALLOW%%,*}"
-echo "                          Moves the book to a new token, so the lost device is"
-echo "                          locked out and the others sign in again. Nothing is lost."
+echo "    The code never leaves the device — the server holds a one-way scramble"
+echo "    of it and could not tell you what the code is."
+echo "    Change the code:      in the app, Settings -> App lock -> Change code."
+echo "                          The book moves with it; other devices then need the"
+echo "                          new code. Do NOT re-run this script to change it."
+echo "    Guessing is limited:  20 wrong keys an hour from one address, then blocked."
 echo "    Logs:                 journalctl -u cashfra-sync -f"

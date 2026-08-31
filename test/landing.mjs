@@ -8,6 +8,7 @@
  */
 import { chromium, devices } from 'playwright';
 import { stubFeed } from './stub-feed.mjs';
+import { consoleNoise, syncNoise } from './helpers.mjs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 const BASE = process.env.BASE || 'http://127.0.0.1:8123/';

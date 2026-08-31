@@ -9,7 +9,7 @@ import { chromium, devices } from 'playwright';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { stubFeed, feedHits } from './stub-feed.mjs';
-import { loadSample } from './helpers.mjs';
+import { loadSample, consoleNoise, syncNoise } from './helpers.mjs';
 
 const BASE = process.env.BASE || 'http://127.0.0.1:8123/';
 const ok = [], bad = [];
@@ -28,11 +28,11 @@ await stubFeed(ctx);
 const page = await ctx.newPage();
 
 const errors = [], failed = [];
-page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+page.on('console', m => { if (m.type() === 'error' && !consoleNoise(m)) errors.push(m.text()); });
 page.on('pageerror', e => errors.push('pageerror: ' + e.message));
 page.on('requestfailed', r => {
   const u = r.url();
-  if (u.startsWith(BASE)) failed.push(u + ' :: ' + r.failure()?.errorText);
+  if (u.startsWith(BASE) && !syncNoise(u)) failed.push(u + ' :: ' + r.failure()?.errorText);
 });
 
 await page.goto(BASE, { waitUntil: 'load' });

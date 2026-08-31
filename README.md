@@ -118,111 +118,72 @@ Only the app is published: no `.md`, no `deploy/`, no `test/`, no `.git`.
 
 ### Sync across devices — optional
 
-Off by default, and the app is complete without it: each device keeps its own
-copy in `localStorage`. Turn it on when the phone and the laptop need to show
-the same book.
+Off by default, and the app is complete without it. Turn it on when the phone
+and the laptop need to show the same book.
 
 ```sh
-sudo ALLOW=you@gmail.com MAIL_MODE=smtp SMTP_HOST=smtp.gmail.com \
-     SMTP_USER=you@gmail.com SMTP_PASS='the app password' \
-     bash /opt/cashfra/deploy/vps-sync-setup.sh
+sudo bash /opt/cashfra/deploy/vps-sync-setup.sh
 ```
 
-`ALLOW` is the list of addresses that may sign in, comma separated. **There is
-no sign-up**: an address not on the list is turned away. The Gmail password
-must be an *app password* (myaccount.google.com → Security → App passwords);
-the normal one will not work. Leave the mail settings out and codes are
-written to `/var/lib/cashfra/outbox` instead of sent — a way in over SSH, not a
-finished setup, and the script says so loudly.
+That is the whole setup. **The access code is the login**: type it on any phone
+or laptop and the book is there, type it wrong and there is no way in. It
+defaults to 162007, which is what a fresh app seeds, so with no arguments this
+just works. A different one: `sudo bash deploy/vps-sync-setup.sh cashfra.com 445566`.
 
-It creates a `cashfra` system user, a systemd unit for `deploy/sync-server.js`
-on a free loopback port (it walks 8787-8799 — the first version assumed 8787
-was free and died on a box where it was not), and an nginx `location = /sync`
-in front of it. One exact address carries everything: reading, writing, and
-signing in, which arrives as a POST with the action in the body. An earlier
-version put signing in under `/sync/auth/…` and it did not route on a real
-server — nginx answered 405, which is what a static handler says to a POST.
-The service still answers the sub-paths for anyone whose nginx does route a
-prefix, but nothing depends on it. Then it checks the two refusals that matter: an unknown token
-gets 401, an unknown address 403. If either is wrong it stops, retries both
-against `127.0.0.1` to say whether the fault is nginx or the service, and does
-**not** print sign-in instructions — a check that failed must not read as
-success. Re-running is safe: the port, the allow-list and the mail settings are
-read back from the installed unit, so `sudo bash deploy/vps-sync-setup.sh` with
-no arguments changes nothing. An explicit `MAIL_MODE=file` wins over what the
-unit holds and clears the SMTP settings — without that there is no way out of a
-bad mail setup, since a wrong password would reinstall itself every run.
+The code never leaves the device. What reaches the server is 200,000 rounds of
+PBKDF2 over it — the setup script computes the same value, and `test/code-login.mjs`
+checks the two agree, because a mismatch would lock ALFA out of his own book with
+both sides looking correct.
 
-The last thing it does is **ask the service to send a real code to the first
-allow-listed address**. Announcing that mail works without having sent anything
-is the same mistake as reporting success on a failed check; a wrong app
-password looks like a working setup right up until the first sign-in. If the
-send fails it prints what the service said and stops.
+The script creates a `cashfra` system user, a systemd unit for
+`deploy/sync-server.js` on a free loopback port (it walks 8787-8799 — the first
+version assumed 8787 was free and died on a box where it was not), and an nginx
+`location = /sync` in front of it. One exact address carries everything:
+reading, writing, and re-keying. An earlier version put signing in under
+`/sync/auth/…` and it did not route on a real server — nginx answered 405, which
+is what a static handler says to a POST.
 
-Then on each device: **Menu → Settings → Sign in**. A device with an empty
-book and no account says so on its own screen — a new phone opens on the PIN
-gate, is let in, and finds nothing, with no hint that signing in is what brings
-the book across. Its **Sign in** button lands on the sign-in section itself,
-not the top of a long Settings page. The server address is
-already filled in (the app is served from it), so it is an email, then the six
-digits that arrive by mail. Every device signed in to the same address shares
-one book, and the history appears on its own — nothing is copied by hand.
+It then checks the two answers that matter — the real key gets 200, a made-up
+one 401 — and if either is wrong it stops, retries against `127.0.0.1` to say
+whether the fault is nginx or the service, and does **not** print instructions.
+A check that failed must not read as success.
 
-Signing in only *fetches* the token the sync has always used, so everything
-below the login is the machinery that was already tested. ALFA never sees a
-token.
+Then on each device: open the address, type the code. Nothing else. The app is
+served from the server it syncs with, so it already knows where to look.
 
-**Losing a device.** Every signed-in device holds the same token, so there is
-no per-device revoke. Move the account to a new one:
-
-```sh
-sudo -u cashfra node /usr/local/lib/cashfra/sync-server.js --rotate you@gmail.com
-```
-
-The ledger moves with it. The lost device is locked out; the others sign in
-again. An account whose book stayed behind under the old token would be a lost
-book, which is the one outcome this whole file exists to prevent.
-
-What it is and is not:
-
-- The server holds **one opaque JSON blob per token** and never parses it, so
-  it does not change when the ledger does.
-- A code is six digits, lives ten minutes, dies after five wrong tries, and
-  cannot be used twice. Five codes per address per hour. Codes are stored
-  salted and hashed and compared in constant time — six digits is only safe if
-  guessing is not.
-- An address that is not allow-listed is told so plainly, rather than being
-  given a silent "check your inbox". That does let someone probe which
-  addresses are accepted; on one person's private server, a code they cannot
-  receive is the worse failure.
-- **The access code never leaves the device.** `lockHash` and `lockSalt` are
-  stripped before anything is sent, and so is the token itself — each device
-  keeps its own code.
+- The server holds **one opaque JSON blob per key** and never parses it, so it
+  does not change when the ledger does.
 - Merging is **a union by entry id**; the later `mt` wins a field-level clash.
-  A device that was offline for a week can never erase what the other one
-  wrote. The honest cost: **a deletion only spreads while the other device is
-  online**, because a merge that deletes could eat somebody's work.
-- Every write carries the version it was based on. A stale write gets a 409
-  and the current blob back, and the loser **merges and retries inside the
-  same exchange**. A device that gave up there would sit on its entry until
-  it was next edited — silently out of step, which is the failure this whole
-  feature exists to remove.
-- A device **pulls when the app comes back to the foreground**, not only when
-  it is unlocked. With the access code removed there is no unlock to hang it
-  on, and that device would otherwise only learn of a change by being edited.
-- A token names a file, and the file must already exist — the service never
-  opens accounts. A second book is `sudo -u cashfra tee
-  /var/lib/cashfra/<token>.json <<< '{"version":0,"at":0,"data":null}'`;
-  revoking one is `sudo rm` on that file.
+  A device offline for a week can never erase what the other one wrote. The
+  honest cost: **a deletion only spreads while the other device is online**,
+  because a merge that deletes could eat somebody's work.
+- Every write carries the version it was based on. A stale write gets a 409 and
+  the current blob, and the loser **merges and retries inside the same
+  exchange** — a device that gave up there would sit on its entry until it was
+  next edited, silently out of step.
+- A device pulls when the app comes back to the foreground, not only on unlock.
+- **Changing the code moves the book.** Settings → App lock → Change code
+  re-keys the server, so the ledger follows; other devices then need the new
+  code. Do not change it by re-running the setup script — that would leave the
+  book stranded under the old key, and the script refuses rather than starting
+  a second empty one beside it.
+- **Guessing is limited**: 20 wrong keys an hour from one address, then blocked.
+  A six-digit code is only safe if guessing is not, and this is what makes the
+  difference between minutes and years.
+- Removing the access code does **not** cut a device off — it already holds the
+  key, and continuing to sync is the better behaviour. But a new device joins by
+  typing the code, so with it removed there is nowhere left to read it from. The
+  panel says so.
+- `sw.js` must keep skipping any request carrying `X-Cashfra-Token`. Cache the
+  exchange and the app reads a stale version number, every write after it is
+  refused, and even a `401` replays as a `200`.
 
-> The service worker must not cache the sync exchange — it is live data, not
-> shell. `sw.js` skips any request carrying `X-Cashfra-Token`. Without that
-> skip the app reads a cached version number, every write after it is refused
-> as stale, and a cached `401` even replays as a `200`. `test/sync.mjs` runs
-> the app and the endpoint on one origin, under a live worker, precisely so
-> that regression fails there instead of on ALFA's phone.
+The server also carries an email-and-code sign-in, used by nothing in the app
+and off unless `ALLOW` names an address. It exists because it was built, tested
+and then made unnecessary; leave it or delete it, but do not wire the app back
+to it without a reason.
 
-### Redeploying
+### Redeploying### Redeploying
 
 Always `./bump-version.sh` first — the shell is served cache-first, and the
 cache name is what tells installed copies that a new build exists. It stamps
@@ -293,7 +254,7 @@ Opening `index.html` over `file://` still works — the app falls back to
 
 ## Tests
 
-Ten Playwright suites, 286 checks. They are for this repo only and never ship
+Ten Playwright suites, 270 checks. They are for this repo only and never ship
 to the server. The price feed is always stubbed, so the suites are hermetic.
 
 ```sh
@@ -310,7 +271,7 @@ BASE=http://127.0.0.1:8123/ node test/brands.mjs
 
 node test/update.mjs                    # starts and tears down its own server
 node test/sync.mjs                      # and its own sync service
-node test/login.mjs                     # ...and its own SMTP server
+node test/code-login.mjs                # ...and a book keyed by 162007
 ```
 
 `smoke.mjs` (52 checks) walks the handoff's regression list on a Pixel viewport:
@@ -376,12 +337,12 @@ with them — then copies it as text he can send them.
 `update.mjs` (7 checks) ships a second build mid-run and verifies the handover
 described under *Redeploying*.
 
-`sync.mjs` (20 checks) runs two browser contexts as two devices against a real
+`sync.mjs` (21 checks) runs two browser contexts as two devices against a real
 `sync-server.js` on a throwaway data directory, behind a thirty-line stand-in
 for nginx so the app and `/sync` share one origin under a live service worker —
 the production topology, and the only arrangement in which the worker can be
-caught caching the exchange. It checks that sync is off until a server is
-entered, that a device pushes on its own, that a second device pulls the whole
+caught caching the exchange. It checks that typing the access code is the
+whole of joining, that a device pushes on its own, that a second device pulls the whole
 ledger, that neither device's entries are lost to the other's merge, that two
 syncs back to back both land, that the access code and the token never reach
 the server, and that an unknown token gets a 401.
@@ -396,22 +357,13 @@ against the fixed code, then re-run with the fix removed: an assertion nobody
 has watched fail is not yet a test, and the first version of the race check
 passed either way.
 
-`login.mjs` (36 checks) covers signing in. Its stand-in for nginx is routed
-the way ALFA's server actually is — an exact match on `/sync`, nothing under
-it — so the suite would have caught the sub-path failure instead of his phone
-doing it. The server's own rules first: an
-address nobody allow-listed is turned away and no mail leaves, a wrong code is
-refused and says how many tries remain, a right one hands back a token, the
-same code cannot be used twice, and signing in again lands on the *same*
-account — otherwise the whole idea fails. Then losing a device: rotating moves
-the account to a new token, the old one stops working, **and the book moves
-with it**. Then the app: a second browser context with an empty ledger signs
-in with nothing but an email and six digits, and the first device's entries are
-there.
-
-It stands up a real SMTP server on implicit TLS with a throwaway certificate
-and makes the service deliver a code through it. Nothing here can reach Gmail,
-and an SMTP client that has never completed a conversation is not a client, it
-is a hope.
+`code-login.mjs` (19 checks) covers the access code being the login. Its first
+check is the one that matters most: the browser and the setup script must derive
+the same key from the same code, or ALFA is locked out of his own book with both
+sides looking correct. Then the shape of it — a second device typing the code and
+finding the book, a wrong code opening nothing and bringing nothing down, a key
+that was never made refused, guessing cut off after twenty tries, and changing the
+code moving the book rather than stranding it. Its stand-in for nginx is routed
+the way ALFA's server is: an exact match on `/sync` and nothing beneath it.
 
 Set `CHROME_PATH` if Playwright can't find a browser.

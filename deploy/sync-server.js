@@ -195,6 +195,22 @@ function sendMail(to, subject, text) {
   });
 }
 
+/* ── guessing ──────────────────────────────────────────────────────────────
+   The key is derived from a short access code, so the only thing standing
+   between a stranger and the book is how many keys they may try. In memory
+   only: a restart forgives, which is the right trade for one person's server. */
+const tries = new Map();
+const TRY_MAX = 20, TRY_WIN = 60 * 60e3;
+function recent(ip) {
+  const now = Date.now();
+  const a = (tries.get(ip) || []).filter(t => now - t < TRY_WIN);
+  if (a.length) tries.set(ip, a); else tries.delete(ip);
+  return a;
+}
+function blocked(ip) { return recent(ip).length >= TRY_MAX; }
+function miss(ip) { const a = recent(ip); a.push(Date.now()); tries.set(ip, a); }
+function hit(ip) { tries.delete(ip); }      /* a right key clears the slate */
+
 /* ── accounts ──────────────────────────────────────────────────────────────
    An account is an email holding a token. Signing in on a third device finds
    the same account, so it finds the same book — which is the entire point. */
@@ -299,16 +315,31 @@ function verifyWith(j, res) {
    405, which is what a static handler says to a POST. One address that is
    known to work beats two that depend on a config nobody can see. */
 function ledger(req, res) {
-  if (req.method === 'POST') return readJson(req, res, j => {
+  if (req.method === 'POST' && !req.headers['x-cashfra-token']) return readJson(req, res, j => {
     const a = String((j && j.action) || '').replace('.', '/');
     if (a === 'auth/start') return startWith(j, res);
     if (a === 'auth/verify') return verifyWith(j, res);
     return send(res, 400, { error: 'unknown action' });
   });
+  const ip = String(req.headers['x-real-ip'] || req.socket.remoteAddress || '?');
+  if (blocked(ip)) return send(res, 429, { error: 'too many attempts' });
   const token = clean(req.headers['x-cashfra-token']);
-  if (!token) return send(res, 401, { error: 'bad token' });
-  /* the token must already exist — signing in is the only thing that makes one */
-  if (!fs.existsSync(file(token))) return send(res, 401, { error: 'unknown token' });
+  if (!token) { miss(ip); return send(res, 401, { error: 'bad token' }); }
+  /* the key must already exist — vps-sync-setup.sh makes it from the access code */
+  if (!fs.existsSync(file(token))) { miss(ip); return send(res, 401, { error: 'unknown key' }); }
+  hit(ip);
+
+  /* Changing the access code changes the key, so the book has to move with it.
+     Proved by holding the old key, so only someone already inside can do it. */
+  if (req.method === 'POST') return readJson(req, res, j => {
+    if (String((j && j.action) || '') !== 'rekey') return send(res, 400, { error: 'unknown action' });
+    const next = clean(j && j.token);
+    if (!next) return send(res, 400, { error: 'bad new key' });
+    if (next === token) return send(res, 200, { ok: true });
+    if (fs.existsSync(file(next))) return send(res, 409, { error: 'that key is already in use' });
+    fs.renameSync(file(token), file(next));
+    send(res, 200, { ok: true });
+  });
 
   if (req.method === 'GET') {
     const rec = readRec(token);

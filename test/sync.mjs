@@ -6,7 +6,7 @@
  * that was behind never erases what the other one wrote.
  */
 import { chromium, devices } from 'playwright';
-import { spawn } from 'child_process';
+import { spawn, execFileSync } from 'child_process';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'fs';
 import { createServer, request as httpRequest } from 'http';
 import { tmpdir } from 'os';
@@ -17,7 +17,12 @@ import { loadSample } from './helpers.mjs';
 const SYNC_PORT = +(process.env.SYNC_PORT || 8789);
 const WEB_PORT = +(process.env.WEB_PORT || SYNC_PORT + 1);
 const ROOT = new URL('..', import.meta.url).pathname;
-const TOKEN = 'cashfra_test_token_0001';
+/* The access code is the key now: the server's file is named by what the app
+   derives from 162007, and a device joins by typing it. Nothing is copied. */
+const CODE = '162007';
+const TOKEN = execFileSync('node', ['-e',
+  'const k=require("crypto");process.stdout.write(k.pbkdf2Sync(process.argv[1],"cashfra-sync-v1",200000,32,"sha256").toString("hex"))',
+  CODE]).toString();
 /* The app and the sync endpoint share one origin here because they share one
    in production — nginx puts /sync on cashfra.com. On two origins the service
    worker would never see the sync at all and this suite would not be testing
@@ -87,17 +92,13 @@ async function device(name) {
 const controlled = d => d.page.evaluate(() =>
   navigator.serviceWorker.ready.then(() => !!navigator.serviceWorker.controller).catch(() => false));
 const ledger = d => d.page.evaluate(() => JSON.parse(localStorage.getItem('fourtis:ledger:v3')));
+/* nothing to configure any more — unlocking is the whole of it */
 const configure = async d => {
-  await d.page.evaluate(([u, t]) => {
-    const S = JSON.parse(localStorage.getItem('fourtis:ledger:v3'));
-    S.sync = { url: u, token: t, ver: 0, at: 0 };
-    localStorage.setItem('fourtis:ledger:v3', JSON.stringify(S));
-  }, [SYNC, TOKEN]);
-  await d.page.reload({ waitUntil: 'load' });
-  await d.page.waitForSelector('#gate.on', { timeout: 5000 });
-  for (const c of '162007') await d.page.click(`#gPad [data-k="${c}"]`);
-  await d.page.waitForFunction(() => !document.getElementById('gate').classList.contains('on'), null, { timeout: 5000 });
-  await d.page.waitForTimeout(900);          // startApp pulls
+  await d.page.waitForFunction(() => {
+    const S = JSON.parse(localStorage.getItem('fourtis:ledger:v3') || 'null');
+    return S && S.sync && S.sync.token;
+  }, null, { timeout: 15000 });
+  await d.page.waitForTimeout(1200);         // the derive, then the pull
 };
 const addEntry = async (d, party, amt) => {
   await d.page.click('#addBtn2');
@@ -112,10 +113,10 @@ const addEntry = async (d, party, amt) => {
 
 // ── off by default ────────────────────────────────────────────────────────
 const A = await device('A');
-check(!(await ledger(A)).sync.url, 'sync is off until a server is entered');
-
+await configure(A);            /* the derive is not instant; wait, then look */
+check((await ledger(A)).sync.token === TOKEN,
+      'typing the access code is the whole of joining — the key comes from it');
 await loadSample(A.page);
-await configure(A);
 await addEntry(A, '$ALPHA', 2);
 await A.page.waitForTimeout(5000);          // the push is debounced
 const afterA = await ledger(A);
@@ -154,14 +155,12 @@ const syncStatus = async (d, times = 2) => {
   await d.page.waitForSelector('#ovPanel.on', { timeout: 3000 });
   await d.page.click('#pBody .mi[data-panel="set"]');
   await d.page.waitForSelector('#pBody [data-sync="now"]', { timeout: 3000 });
-  const line = d.page.locator('#pBody .sec').filter({ hasText: 'Sync across devices' })
-                     .locator('p.tiny').last();
+  const line = d.page.locator('#syncNote');
   const out = [];
   for (let i = 0; i < times; i++) {
     await d.page.click('#pBody [data-sync="now"]');
     await d.page.waitForFunction(
-      () => !/Syncing/.test(document.querySelector('#pBody [data-sync="now"]')
-              .closest('.sec').querySelector('p.tiny:last-child').textContent),
+      () => !/Syncing|Fetching/.test(document.querySelector('#syncNote').textContent),
       null, { timeout: 8000 }).catch(() => {});
     await d.page.waitForTimeout(400);
     out.push((await line.textContent()).trim());
@@ -223,43 +222,44 @@ check(after.tx.some(t => t.party === '$RACED') && after.tx.length === held,
 check(after.invNote === 'written by the other device',
       'and the other device\u2019s write is not overwritten by the retry');
 
-// ── a device with no access code still picks work up ──────────────────────
-/* Coming back to the app is when the other device's work is most likely
-   waiting. With a code set, unlocking pulls; with the code removed there is
-   no unlock to hang it on, so the pull has to ride on the app becoming
-   visible again — otherwise that device only ever learns of a change by
-   being edited itself. */
+// ── removing the code stops sync, because the code is the key ─────────────
+/* The trade in making the code the login: no code, no key, no book. That has
+   to be visible rather than silent — a device quietly not syncing is the
+   failure this whole feature exists to remove. */
 await B.page.click('#moreBtn');
 await B.page.waitForSelector('#ovPanel.on', { timeout: 3000 });
 await B.page.click('#pBody .mi[data-panel="set"]');
 await B.page.waitForSelector('#pBody [data-lock="remove"]', { timeout: 3000 });
 await B.page.click('#pBody [data-lock="remove"]');
 await B.page.click('#tAct');                                   // confirm
-await B.page.waitForTimeout(600);
+await B.page.waitForTimeout(800);
+check(!(await ledger(B)).lockHash, 'the access code can still be removed');
+/* it does NOT stop syncing: the key was derived once and is held here. That
+   is the better behaviour, so what has to be right is what the panel says —
+   a new device still joins by typing the code, and there is now nowhere on
+   this one to read it from. */
+const said = await B.page.textContent('#pBody');
+check(/keeps syncing/i.test(said), 'and this device carries on — it already holds the key');
+check(/typing the access code/i.test(said) && /written down/i.test(said),
+      'while warning that a new device still needs the code, which is now nowhere on this one');
 await B.page.click('#pClose');
-await B.page.waitForTimeout(400);
-check(!(await ledger(B)).lockHash, 'device B is running with no access code');
+await B.page.waitForTimeout(300);
 
-await addEntry(A, '$WHILE_AWAY', 6);
-await A.page.waitForTimeout(5200);                             // A pushes on its own
-check((await ledger(B)).tx.every(t => t.party !== '$WHILE_AWAY'),
-      'B has not seen it yet — nothing on B has changed');
-
-/* the same backgrounding the auto-lock suite uses */
+await addEntry(A, '$AFTER_REMOVAL', 6);
+await A.page.waitForTimeout(5200);
 await B.page.evaluate(() => {
   Object.defineProperty(document, 'visibilityState', { get: () => 'hidden', configurable: true });
   document.dispatchEvent(new Event('visibilitychange'));
 });
-await B.page.waitForTimeout(400);
+await B.page.waitForTimeout(300);
 await B.page.evaluate(() => {
   Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
   document.dispatchEvent(new Event('visibilitychange'));
 });
-await B.page.waitForFunction(() =>
-  JSON.parse(localStorage.getItem('fourtis:ledger:v3')).tx.some(t => t.party === '$WHILE_AWAY'),
-  null, { timeout: 8000 }).catch(() => {});
-check((await ledger(B)).tx.some(t => t.party === '$WHILE_AWAY'),
-      'reopening the app is enough — the entry is there without touching B');
+await B.page.waitForTimeout(2000);
+const stillOn = await ledger(B);
+check(stillOn.tx.some(t => t.party === '$AFTER_REMOVAL'),
+      'and it is really still connected, not merely claiming to be');
 
 // ── the access code never leaves the device ───────────────────────────────
 const onServer = await A.page.evaluate(async ([u, t]) => {
@@ -269,7 +269,7 @@ const onServer = await A.page.evaluate(async ([u, t]) => {
 check(onServer && onServer.lockHash === undefined && onServer.lockSalt === undefined,
       'the access code is never sent to the server');
 check(onServer.sync === undefined, 'and neither is the token');
-const local = await ledger(A);          // the race added one more since `merged`
+const local = await ledger(A);          // the race and the removal check added more
 check(Array.isArray(onServer.tx) && onServer.tx.length === local.tx.length,
       `the server holds the merged ledger (${onServer.tx.length} entries)`);
 

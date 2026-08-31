@@ -13,3 +13,11 @@ export async function loadSample(page) {
                              null, { timeout: 3000 });
   await page.waitForTimeout(200);
 }
+
+/* The dev server is not a sync server, so /sync 404s — and offline, it fails
+   outright. That is the app correctly discovering there is nothing there
+   (once, then it stops), not a defect for a suite to report. */
+export const syncNoise = u => /\/sync(\?|$)/.test(String(u || ''));
+export const consoleNoise = m => {
+  try { return syncNoise(m.location() && m.location().url); } catch (e) { return false; }
+};

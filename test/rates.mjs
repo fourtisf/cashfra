@@ -7,6 +7,7 @@
  * revalues an entry that is already in the books. */
 import { chromium, devices } from 'playwright';
 import { stubFeed, feedHits, feedUrls } from './stub-feed.mjs';
+import { consoleNoise, syncNoise } from './helpers.mjs';
 const BASE = process.env.BASE || 'http://127.0.0.1:8123/';
 const ok=[],bad=[]; const check=(c,m)=>(c?ok:bad).push(m);
 const b=await chromium.launch({executablePath:process.env.CHROME_PATH||undefined});

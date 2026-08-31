@@ -5,7 +5,7 @@
  * Nothing here touches app data — the ledger lives in localStorage, never in
  * the cache, so activating a new shell can never drop a single entry.
  */
-var BUILD = '2026-08-31-12';
+var BUILD = '2026-08-31-13';
 var CACHE = 'cashfra-' + BUILD;
 var SHELL = [
   './',

@@ -9,7 +9,7 @@
  */
 import { chromium, devices } from 'playwright';
 import { stubFeed } from './stub-feed.mjs';
-import { loadSample } from './helpers.mjs';
+import { loadSample, consoleNoise, syncNoise } from './helpers.mjs';
 
 const BASE = process.env.BASE || 'http://127.0.0.1:8123/';
 const ok = [], bad = [];
@@ -31,7 +31,7 @@ const ctx = await browser.newContext({ ...devices['Pixel 7'], permissions: ['cli
 await stubFeed(ctx);
 const page = await ctx.newPage();
 page.on('pageerror', e => bad.push('pageerror: ' + e.message));
-page.on('console', m => { if (m.type() === 'error') bad.push('console: ' + m.text()); });
+page.on('console', m => { if (m.type() === 'error' && !consoleNoise(m)) bad.push('console: ' + m.text()); });
 
 const unlock = async () => {
   await page.waitForSelector('#gate.on', { timeout: 5000 });

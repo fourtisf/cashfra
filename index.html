@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-08-31-12">
+<meta name="cashfra-build" content="2026-08-31-13">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -702,7 +702,7 @@ body.locked{overflow:hidden}
     <button class="glink hide" id="gForgot">Forgot the code?</button>
     <button class="glink hide" id="gCancel">Cancel</button>
     <div class="ghint" id="gHint"></div>
-    <div class="gnote">&#128274; Your data stays on this device</div>
+    <div class="gnote" id="gNote">&#128274; Your data stays on this device</div>
   </div>
 </div>
 
@@ -783,7 +783,6 @@ var S=clone(DEF);
 var anchor=new Date(), flt='', editId=null, fType='in', fTokV='SOL', fChainV='SOL', fBrandV='', brandView='', formPkg='', panel='menu', undoBuf=null;
 var mixAll=false, ratePrefill='', rateBusy=false, hidAt=0, autoLocked=false, costOf='spend', cliOpen='', teamOpen='';
 var syncBusy=false, syncMsg='', syncT=null, syncSaving=false;
-var authEmail='', authTyped='', authBusy=false;
 
 function clone(o){return JSON.parse(JSON.stringify(o));}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
@@ -1176,16 +1175,26 @@ function renderList(M){
  '<span>in <b class="pos">'+usd(T.gi)+'</b> &nbsp; out <b class="neg">'+usd(T.go+T.gc)+'</b> &nbsp; net <b class="'+(T.net>=0?'pos':'neg')+'">'+usd(T.net)+'</b></span></div>'+
  demoLine();
 }
-/* A new phone opens on a PIN screen, is let in, and finds an empty book with
-   nothing to say it is not signed in. ALFA hit exactly that and thought the
-   sign-in was broken. Only shown where it is certainly true — no entries at
-   all, and no account on this device — so it never nags a device in use. */
+/* An empty book on a device that should have one is the moment to say what
+   sync is doing. Silence here is what made ALFA think the whole thing was
+   broken: he typed the right code, landed on nothing, and nothing explained
+   why. Only while the book is empty — never over a device in use. */
 function signInCard(){
- if(syncOn()||S.tx.length)return'';
- return'<div class="join"><span class="e">\u2601\ufe0f</span>'+
-  '<h3>New device?</h3>'+
-  '<p>Sign in and everything you have already logged appears here \u2014 nothing to copy across by hand.</p>'+
-  '<button class="bp" data-panel="set" data-goto="sync">Sign in</button></div>';
+ if(S.tx.length)return'';
+ var url=syncUrl();
+ if(!url)return'';
+ if(!S.lockHash)
+  return'<div class="join"><span class="e">\u2601\ufe0f</span><h3>Set an access code</h3>'+
+   '<p>Your code is the key to your book. Set one and this device shows the same entries as your others.</p>'+
+   '<button class="bp" data-panel="set" data-goto="sync">Open settings</button></div>';
+ if(!syncOn()||syncBusy)
+  return'<div class="join"><span class="e">\u2601\ufe0f</span><h3>Fetching your book\u2026</h3>'+
+   '<p>Signed in with your access code. If you have logged anything on another device, it appears here in a moment.</p></div>';
+ if(!num((S.sync||{}).at))
+  return'<div class="join"><span class="e">\u2601\ufe0f</span><h3>Nothing on the server yet</h3>'+
+   '<p>'+esc(syncMsg||'This is the first device to use this code. What you log here is what the others will find.')+'</p>'+
+   '<button class="bs" data-sync="now">Try again</button></div>';
+ return'';
 }
 function demoLine(){
  return S.demo?'<div class="dm">These are sample entries \u00b7 <button data-wipe="1">Clear and start fresh</button></div>':'';
@@ -1500,31 +1509,44 @@ function linkOpen(){
    so the merge never deletes. Deleting an entry on one device therefore needs
    the other device to be online to see it — the honest trade for never eating
    somebody's work. */
-function syncOn(){var c=S.sync||{};return !!(c.url&&c.token);}
-/* Served from the server it syncs with, in every normal case — so the address
-   is already known and does not have to be typed on each new device. */
-function defSyncUrl(){
+/* The access code IS the login. Type it on any device and the book follows,
+   which is the whole of what ALFA asked for — no email, no token to copy.
+   The code itself never travels: what goes to the server is 200k rounds of
+   PBKDF2 over it, so the server stores a key it cannot turn back into 162007,
+   and a stolen server file is not a stolen code.
+   deploy/vps-sync-setup.sh computes the same value; test/code-login.mjs
+   checks the two agree, because a mismatch would lock ALFA out of his own
+   book with everything looking correct on both sides. */
+var CODE_SALT='cashfra-sync-v1', CODE_ITER=200000;
+function tokenFromCode(code){
  try{
-  if(location.protocol==='http:'||location.protocol==='https:')
-   return location.origin+'/sync';
+  if(window.crypto&&window.crypto.subtle&&window.TextEncoder){
+   var enc=new TextEncoder();
+   return window.crypto.subtle.importKey('raw',enc.encode(String(code)),{name:'PBKDF2'},false,['deriveBits'])
+    .then(function(k){
+     return window.crypto.subtle.deriveBits(
+      {name:'PBKDF2',salt:enc.encode(CODE_SALT),iterations:CODE_ITER,hash:'SHA-256'},k,256);
+    }).then(function(b){
+     var a=new Uint8Array(b),h='';
+     for(var i=0;i<a.length;i++){var x=a[i].toString(16);h+=(x.length<2?'0':'')+x;}
+     return h;
+    })['catch'](function(){return '';});
+  }
+ }catch(e){}
+ return Promise.resolve('');    /* no subtle crypto (file://) — sync stays off */
+}
+/* Served from the server it syncs with, in every normal case, so a new device
+   needs nothing typed in: open the address, type the code, the book is there. */
+function syncUrl(){
+ var u=String((S.sync&&S.sync.url)||'').trim();
+ if(u)return u.replace(/\/+$/,'');
+ try{
+  if(location.protocol==='http:'||location.protocol==='https:')return location.origin+'/sync';
  }catch(e){}
  return '';
 }
-/* Signing in goes to the ledger's own address as a POST, not to a sub-path.
-   A sub-path only works if nginx was told to route the whole prefix, and on a
-   server where it was not, /sync answered while /sync/auth/start did not.
-   One address that is known to work beats two that depend on a config file. */
-function authPost(what,body){
- var u=String((S.sync&&S.sync.url)||($('#pSyncUrl')&&$('#pSyncUrl').value)||'').trim().replace(/\/+$/,'');
- if(!u)return Promise.resolve({code:0,body:{error:'Enter the server address first'}});
- body=Object.keys(body).reduce(function(o,k){o[k]=body[k];return o;},{action:'auth.'+what});
- return fetch(u,{method:'POST',cache:'no-store',
-  headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
-  .then(function(r){
-   return r.json()['catch'](function(){return{};}).then(function(j){return{code:r.status,body:j};});
-  })['catch'](function(e){return{code:0,body:{error:'Could not reach '+u}};});
-}
-function syncCfg(){if(!S.sync)S.sync={url:'',token:'',email:'',ver:0,at:0};return S.sync;}
+function syncOn(){var c=S.sync||{};return !!(syncUrl()&&c.token&&!c.none);}
+function syncCfg(){if(!S.sync)S.sync={url:'',token:'',ver:0,at:0};return S.sync;}
 function syncSet(m){syncMsg=m;if($('#ovPanel').classList.contains('on')&&panel==='set')repaint();}
 function mergeTx(mine,theirs){
  var by={},out=[],i,t;
@@ -1538,9 +1560,12 @@ function mergeTx(mine,theirs){
  out.sort(function(a,b){return b.date.localeCompare(a.date)||String(b.id).localeCompare(String(a.id));});
  return out;
 }
+/* Everything talks to one address — reading, writing and re-keying. A
+   sub-path only works if nginx routes the whole prefix, and on a server where
+   it did not, /sync answered while /sync/auth/start returned 405. */
 function syncReq(method,body){
  var c=syncCfg();
- return fetch(c.url,{
+ return fetch(syncUrl(),{
   method:method,cache:'no-store',
   headers:{'Content-Type':'application/json','X-Cashfra-Token':c.token},
   body:body?JSON.stringify(body):undefined
@@ -1554,7 +1579,11 @@ function syncNow(quiet,retry){
  syncBusy=true;
  if(!quiet)syncSet('Syncing…');
  return syncReq('GET').then(function(r){
-  if(r.code===401)throw new Error('Server did not recognise the token');
+  if(r.code===401)throw new Error('Wrong access code for this server');
+  /* Not a sync server at all — a copy served from somewhere with no /sync.
+     Remember it and stop knocking, rather than a 404 on every save for ever. */
+  if(r.code===404||r.code===405){syncCfg().none=1;syncSaving=true;save();syncSaving=false;
+   throw new Error('No sync server at '+syncUrl());}
   if(r.code!==200)throw new Error('Server said '+r.code);
   var remote=r.body.data;
   if(remote&&Array.isArray(remote.tx)){
@@ -1599,6 +1628,34 @@ function syncNow(quiet,retry){
   syncBusy=false;
   syncSet(String(e&&e.message||e));
   return false;
+ });
+}
+/* Called the moment the right code is typed: turn it into the key and pull. */
+function signInWith(code){
+ if(!syncUrl())return;
+ tokenFromCode(code).then(function(t){
+  if(!t)return;
+  var c=syncCfg();
+  if(c.token===t)return;
+  c.token=t;c.ver=0;c.at=0;   /* a device that has never spoken to the server */
+  save();
+  /* deriving takes a moment, and startApp's own sync has already been and
+     gone by now — so this is the one that fetches the book */
+  syncSet('Fetching your book\u2026');
+  syncNow(true).then(function(okc){if(okc&&appStarted)render();});
+ });
+}
+/* Move the book to the key the new code makes. Authenticated by the old one,
+   so only someone already inside can do it. */
+function rekey(oldTok,newTok){
+ var c=syncCfg();
+ return fetch(syncUrl(),{method:'POST',cache:'no-store',
+  headers:{'Content-Type':'application/json','X-Cashfra-Token':oldTok},
+  body:JSON.stringify({action:'rekey',token:newTok})
+ }).then(function(r){
+  if(r.status!==200)throw new Error('rekey '+r.status);
+  c.token=newTok;save();
+  return syncNow(true);
  });
 }
 function syncSoon(){
@@ -2578,37 +2635,36 @@ function oneCliHtml(){
    the whole point is that there is nothing to copy across by hand: type the
    address, type six digits, and the history is there. */
 function syncSec(){
- var c=S.sync||{},on=syncOn();
+ var c=S.sync||{},url=syncUrl(),on=syncOn();
  var note=syncMsg?esc(syncMsg)
-   :(on?(num(c.at)?'Last synced '+esc(relTime(num(c.at))):'Signed in \u2014 not synced yet')
+   :(on?(num(c.at)?'Last synced '+esc(relTime(num(c.at))):'Not synced yet')
        :'Off \u2014 this device keeps its own copy');
- var head='<div class="sec"><h3>Sign in \u00b7 sync across devices</h3>';
- if(on)
-  return head+'<p class="tiny">Signed in'+(c.email?' as <b>'+esc(c.email)+'</b>':'')+
-   '. Every device signed in to the same address shares one book. Entries are merged by id, '+
-   'so nothing is lost to a device that was behind \u2014 but a deletion only spreads while '+
-   'the other device is online. Your access code is not part of what syncs.</p>'+
-   '<div class="wrapb"><button class="bs" data-sync="now">Sync now</button>'+
-   '<button class="bs" data-sync="out" style="color:var(--out)">Sign out</button></div>'+
-   '<p class="tiny" style="margin:10px 0 0">'+note+'</p></div>';
-
- var sent=!!authEmail;
- return head+
-  '<p class="tiny">Sign in and this device shows the same book as your others. '+
-  'Nothing is copied by hand \u2014 the history arrives on its own. '+
-  'It runs on your own server, and your access code never leaves this device.</p>'+
-  '<div class="fr"><label>Server address</label>'+
-   '<input id="pSyncUrl" autocomplete="off" inputmode="url" placeholder="https://cashfra.com/sync" value="'+esc(c.url||defSyncUrl())+'"></div>'+
-  (sent
-   ? '<div class="fr"><label>Code sent to '+esc(authEmail)+'</label>'+
-     '<input id="pAuthCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 digits"></div>'+
-     '<div class="wrapb"><button class="bs" data-auth="verify">Sign in</button>'+
-     '<button class="bs" data-auth="again">Send another</button>'+
-     '<button class="bs" data-auth="cancel">Use a different address</button></div>'
-   : '<div class="fr"><label>Email</label>'+
-     '<input id="pAuthMail" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" value="'+esc(authTyped)+'"></div>'+
-     '<div class="wrapb"><button class="bs" data-auth="start">Email me a code</button></div>')+
-  '<p class="tiny" style="margin:10px 0 0">'+note+'</p></div>';
+ return'<div class="sec"><h3>Sync across devices</h3>'+
+  '<p class="tiny">Your access code is the key to your book. Open this address on any '+
+  'phone or laptop, type the same code, and everything is there \u2014 nothing to copy across '+
+  'by hand. The code itself never leaves the device: what reaches the server is a one-way '+
+  'scramble of it, which cannot be turned back into your code.</p>'+
+  (!url
+   ? '<p class="tiny">This copy is not being served from a sync server, so it keeps its own book.</p>'
+   : (!S.lockHash&&!c.token)
+     ? '<p class="tiny" style="color:var(--out)">Sync needs an access code, because the code is the key. '+
+       'Set one under <b>App lock</b> below and it starts on its own.</p>'
+   : !S.lockHash
+     ? '<div class="kv"><span>Server<div class="s">'+esc(url)+'</div></span>'+
+       '<span class="r"><b>on</b></span></div>'+
+       '<p class="tiny" style="color:var(--out);margin-top:8px">This device keeps syncing \u2014 it already holds the key. '+
+       'But a new phone or laptop joins by <b>typing the access code</b>, and you have removed it here, '+
+       'so keep it written down somewhere. Without it, nothing new can reach this book.</p>'+
+       '<div class="wrapb"><button class="bs" data-sync="now">Sync now</button></div>'
+     : '<div class="kv"><span>Server<div class="s">'+esc(url)+'</div></span>'+
+       '<span class="r"><b>'+(on?'on':'off')+'</b></span></div>'+
+       '<div class="wrapb"><button class="bs" data-sync="now">Sync now</button></div>')+
+  '<p class="tiny" id="syncNote" style="margin:10px 0 0">'+note+'</p>'+
+  '<details class="acc" style="margin-top:12px"><summary>A different server<span class="chev">\u25be</span></summary>'+
+   '<div class="fr" style="margin-top:10px"><label>Server address</label>'+
+   '<input id="pSyncUrl" autocomplete="off" inputmode="url" placeholder="'+esc(url||'https://cashfra.com/sync')+'" value="'+esc(c.url||'')+'"></div>'+
+   '<p class="tiny">Leave this empty and it uses the address this app was opened from, which is almost always right.</p>'+
+   '</details></div>';
 }
 function setHtml(){
  function pair(k,arr,p1,p2){
@@ -2689,7 +2745,7 @@ function dataHtml(){
 
 /* global events */
 document.addEventListener('click',function(e){
- var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-seed],[data-mix],[data-cshare],[data-rate],[data-sync],[data-auth],[data-cli],[data-team],[data-tcopy],[data-lock]');
+ var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-seed],[data-mix],[data-cshare],[data-rate],[data-sync],[data-cli],[data-team],[data-tcopy],[data-lock]');
  if(!el)return;
  var d=el.dataset;
  if(d.lock!==undefined){
@@ -2712,56 +2768,9 @@ document.addEventListener('click',function(e){
  if(d.mix!==undefined){mixAll=(d.mix==='all');repaint();return;}
  if(d.cshare!==undefined){costOf=d.cshare;repaint();return;}
  if(d.sync!==undefined){
-  if(d.sync==='out'){
-   toast('Sign out of sync on this device?','Sign out',function(){
-    /* the ledger stays; only the way back to the server goes */
-    S.sync={url:(S.sync||{}).url||'',token:'',email:'',ver:0,at:0};
-    authEmail='';authTyped='';syncMsg='';save();repaint();toast('Signed out on this device');
-   });
-   return;
-  }
-  if(!syncOn()){toast('Sign in first');return;}
+  if(syncCfg().none){syncCfg().none=0;save();}      /* asked by hand: try again */
+  if(!syncOn()){toast(S.lockHash?'No sync server for this copy':'Set an access code first \u2014 it is the key');return;}
   syncNow(false).then(function(okc){toast(okc?'Synced':(syncMsg||'Sync failed'));});
-  return;
- }
- if(d.auth!==undefined){
-  if(d.auth==='cancel'){authEmail='';syncMsg='';repaint();return;}
-  if(authBusy)return;
-  var url=($('#pSyncUrl')&&$('#pSyncUrl').value||'').trim();
-  if(!url){toast('Enter the server address first');return;}
-  if(!S.sync)S.sync={url:'',token:'',email:'',ver:0,at:0};
-  S.sync.url=url;save();
-
-  if(d.auth==='start'||d.auth==='again'){
-   var mail=(d.auth==='again')?authEmail:(($('#pAuthMail')&&$('#pAuthMail').value||'').trim());
-   if(!mail){toast('Enter your email');return;}
-   authTyped=mail;authBusy=true;syncSet('Sending a code\u2026');
-   authPost('start',{email:mail}).then(function(r){
-    authBusy=false;
-    if(r.code===200){authEmail=mail;syncSet('Code sent to '+mail+' \u2014 it lasts ten minutes');}
-    else syncSet(r.body&&r.body.error||('Server said '+r.code));
-    repaint();
-   });
-   return;
-  }
-  if(d.auth==='verify'){
-   var code=($('#pAuthCode')&&$('#pAuthCode').value||'').trim();
-   if(!/^\d{6}$/.test(code)){toast('Type the six digits from the email');return;}
-   authBusy=true;syncSet('Signing in\u2026');
-   authPost('verify',{email:authEmail,code:code}).then(function(r){
-    authBusy=false;
-    if(r.code!==200||!r.body.token){syncSet(r.body&&r.body.error||('Server said '+r.code));repaint();return;}
-    S.sync.token=r.body.token;S.sync.email=r.body.email||authEmail;
-    S.sync.ver=0;S.sync.at=0;      /* a fresh device knows nothing of the server yet */
-    authEmail='';authTyped='';save();
-    syncSet('Signed in \u2014 fetching your book\u2026');repaint();
-    syncNow(false).then(function(okc){
-     toast(okc?'Signed in \u00b7 your history is here':(syncMsg||'Signed in, but the sync failed'));
-     repaint();
-    });
-   });
-   return;
-  }
   return;
  }
  if(d.rate!==undefined){
@@ -2860,11 +2869,11 @@ document.addEventListener('input',function(e){
  if(e.target.id==='pGoal'){S.goal=num(e.target.value);save();render();return;}
  if(e.target.id==='pInvNote'){S.invNote=e.target.value;save();return;}
  if(e.target.id==='pSyncUrl'){
-  if(!S.sync)S.sync={url:'',token:'',email:'',ver:0,at:0};
+  if(!S.sync)S.sync={url:'',token:'',ver:0,at:0};
   S.sync.url=e.target.value.trim();
+  S.sync.none=0;                                   /* a new address deserves a try */
   syncMsg='';save();
  }
- if(e.target.id==='pAuthMail'){authTyped=e.target.value;}
 });
 document.addEventListener('change',function(e){
  if(e.target.dataset.ct2!==undefined){repaint();return;}
@@ -3092,6 +3101,16 @@ function seedPreset(){
  });
 }
 function padMode(){return gateMode==='lock'&&S.lockNum!==false;}
+/* The lock screen promised the data never leaves. Once the code is also the
+   key to the book on the server, that is no longer true here, and a promise
+   that has quietly stopped holding is worse than none. */
+function gateNote(){
+ var el=$('#gNote');
+ if(!el)return;
+ el.innerHTML=syncUrl()
+  ? '\ud83d\udd12 The same code on any device opens the same book'
+  : '\ud83d\udd12 Your data stays on this device';
+}
 function gate(mode){
  gateMode=mode;pin='';pinBusy=false;
  $('#g1').value='';$('#g2').value='';$('#gErr').textContent='';
@@ -3140,8 +3159,9 @@ function padKey(k){
 }
 function tryPin(){
  pinBusy=true;
+ var typed=pin;
  hashCode(S.lockSalt+':'+pin).then(function(h){
-  if(h===S.lockHash){pin='';pinBusy=false;startApp();return;}
+  if(h===S.lockHash){pin='';pinBusy=false;signInWith(typed);startApp();return;}
   $('#gDots').classList.add('err');
   $('#gErr').textContent='Wrong code \u2014 try again';
   setTimeout(function(){pin='';pinBusy=false;$('#gDots').classList.remove('err');renderDots();},480);
@@ -3208,7 +3228,7 @@ $('#gGo').onclick=function(){
  if(gateMode==='lock'){
   if(!v1)return gerr('Type your code first');
   hashCode(S.lockSalt+':'+v1).then(function(h){
-   if(h===S.lockHash)startApp();
+   if(h===S.lockHash){signInWith(v1);startApp();}
    else gerr('Wrong code \u2014 try again');
   });
   return;
@@ -3216,14 +3236,23 @@ $('#gGo').onclick=function(){
  if(v1.length<4)return gerr('Use at least 4 characters');
  if(v1!==v2)return gerr('The two codes don\u2019t match');
  var salt=uid();
+ var wasChange=gateMode==='change', hadToken=(S.sync||{}).token;
  hashCode(salt+':'+v1).then(function(h){
   S.lockSalt=salt;S.lockHash=h;
   S.lockLen=v1.length;S.lockNum=/^\d+$/.test(v1);
   save();
-  var wasChange=gateMode==='change';
   startApp();
+  /* The code is the key to the book, so changing it has to move the book —
+     otherwise the next unlock derives a key the server has never seen and
+     the whole ledger looks gone. */
+  return tokenFromCode(v1).then(function(nt){
+   if(!nt)return;
+   if(hadToken&&hadToken!==nt&&syncUrl())return rekey(hadToken,nt);
+   S.sync.token=nt;save();syncNow(true);
+  });
+ }).then(function(){
   toast(wasChange?'Access code updated':'Access code set');
- });
+ })['catch'](function(){toast('Code changed here, but the server kept the old one');});
 };
 $('#gForgot').onclick=function(){gate('forgot');};
 $('#gCancel').onclick=function(){
@@ -3275,6 +3304,7 @@ Promise.resolve(load()).then(function(){
  if(brandView&&S.brands.indexOf(brandView)<0)brandView='';
  per=(S.per==='w')?'w':'m';
  $$('.hper button').forEach(function(x){x.classList.toggle('on',x.dataset.per===per);});
+ gateNote();
  if(S.lockPreset!=='162007-v1'){seedPreset().then(function(){gate('lock');});}
  else if(S.lockHash)gate('lock');
  else startApp();
