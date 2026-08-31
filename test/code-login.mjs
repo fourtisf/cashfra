@@ -31,22 +31,27 @@ const report = () => {
 
 const DATA = mkdtempSync(join(tmpdir(), 'cashfra-code-'));
 /* exactly what deploy/vps-sync-setup.sh runs */
-const keyFor = c => execFileSync('node', ['-e',
-  'const k=require("crypto");process.stdout.write(k.pbkdf2Sync(process.argv[1],"cashfra-sync-v1",200000,32,"sha256").toString("hex"))',
-  c]).toString();
+const keyFor = c => execFileSync('node', ['deploy/sync-server.js', '--key', c],
+  { env: { ...process.env, DATA_DIR: DATA } }).toString().trim();
 const KEY = keyFor(CODE);
 writeFileSync(join(DATA, KEY + '.json'), JSON.stringify({ version: 0, at: 0, data: null }));
 
 const server = spawn('node', ['deploy/sync-server.js'],
   { env: { ...process.env, PORT: String(SYNC_PORT), DATA_DIR: DATA }, stdio: 'ignore', detached: true });
+/* a second, empty server: somewhere the right code opens nothing, which is
+   exactly the state ALFA was in when the card contradicted itself */
+const EMPTY = mkdtempSync(join(tmpdir(), 'cashfra-empty-'));
+const server2 = spawn('node', ['deploy/sync-server.js'],
+  { env: { ...process.env, PORT: String(SYNC_PORT + 5), DATA_DIR: EMPTY }, stdio: 'ignore', detached: true });
 
 /* nginx as ALFA's actually is: an exact match on /sync, nothing beneath it */
 const TYPES = { '.html': 'text/html', '.js': 'application/javascript', '.json': 'application/json',
                 '.png': 'image/png', '.ico': 'image/x-icon', '.txt': 'text/plain' };
 const web = createServer((req, res) => {
   const url = new URL(req.url, WEB);
-  if (url.pathname === '/sync') {
-    const p = httpRequest({ host: '127.0.0.1', port: SYNC_PORT, path: '/',
+  if (url.pathname === '/sync' || url.pathname === '/sync2') {
+    const p = httpRequest({ host: '127.0.0.1',
+                            port: url.pathname === '/sync2' ? SYNC_PORT + 5 : SYNC_PORT, path: '/',
                             method: req.method, headers: req.headers }, up => {
       res.writeHead(up.statusCode, up.headers); up.pipe(res);
     });
@@ -64,8 +69,10 @@ const web = createServer((req, res) => {
 
 const cleanup = () => {
   try { process.kill(-server.pid); } catch {}
+  try { process.kill(-server2.pid); } catch {}
   try { web.close(); } catch {}
   rmSync(DATA, { recursive: true, force: true });
+  rmSync(EMPTY, { recursive: true, force: true });
 };
 process.on('exit', cleanup);
 process.on('uncaughtException', e => { report(); console.log('\n  CRASH  ' + e.message.split('\n')[0]); cleanup(); process.exit(1); });
@@ -137,7 +144,30 @@ await B.page.waitForFunction(() =>
 check((await ledger(B)).tx.some(t => t.party === '$FIRST_PHONE'),
       'the same code on a second device brings the book — nothing else typed, no email');
 
-// ══ 3. a wrong code gets nowhere ═════════════════════════════════════════
+// ══ 3. a card that says one thing, not two ═══════════════════════════════
+/* "Nothing on the server yet" printed over "Wrong access code" says two
+   things at once and neither of them helps. */
+const D = await device('D');
+await D.page.waitForSelector('#gate.on', { timeout: 5000 });
+await D.page.waitForFunction(() => !!localStorage.getItem('fourtis:ledger:v3'),
+  null, { timeout: 5000 });            // the preset code is seeded before it writes
+await D.page.evaluate(k => {           // pointed at a server with no book at all
+  const S = JSON.parse(localStorage.getItem('fourtis:ledger:v3'));
+  S.sync = { url: k, token: '', ver: 0, at: 0 };
+  localStorage.setItem('fourtis:ledger:v3', JSON.stringify(S));
+}, WEB + 'sync2');
+await D.page.reload({ waitUntil: 'load' });
+await unlock(D); await opened(D);
+await D.page.waitForFunction(() => document.querySelector('.join') &&
+  !/Fetching/.test(document.querySelector('.join h3').textContent), null, { timeout: 15000 }).catch(() => {});
+const head = await D.page.textContent('.join h3');
+const body = await D.page.textContent('.join p');
+check(/does not open the book/i.test(head), `the card names the real problem (${head})`);
+check(!/Nothing on the server/i.test(head), 'and does not also claim the server is empty');
+check(/different access code/i.test(body), 'the words under it agree with the heading');
+await D.ctx.close();
+
+// ══ 4. a wrong code gets nowhere ═════════════════════════════════════════
 const C = await device('C');
 await C.page.waitForSelector('#gate.on', { timeout: 5000 });
 await unlock(C, '999999');
@@ -152,7 +182,7 @@ const guessed = await C.page.evaluate(async u => {
 }, SYNC);
 check(guessed === 401, `a key that was never made is refused by the server too (${guessed})`);
 
-// ══ 4. changing the code takes the book with it ══════════════════════════
+// ══ 5. changing the code takes the book with it ══════════════════════════
 await A.page.click('#moreBtn');
 await A.page.waitForSelector('#ovPanel.on', { timeout: 3000 });
 await A.page.click('#pBody .mi[data-panel="set"]');
@@ -177,7 +207,7 @@ check(stale === 401, `the old code no longer opens anything (${stale})`);
 check(readdirSync(DATA).filter(f => f.endsWith('.json')).length === 1,
       'one book on the server, not two — the old one was moved, not copied');
 
-// ══ 5. guessing is not free ══════════════════════════════════════════════
+// ══ 6. guessing is not free ══════════════════════════════════════════════
 /* Last, deliberately: every device here shares one address, so the block this
    earns would fall on the others too. On a real server nginx passes the
    caller's own address and they are counted apart. */

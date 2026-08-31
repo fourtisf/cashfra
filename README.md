@@ -131,9 +131,15 @@ defaults to 162007, which is what a fresh app seeds, so with no arguments this
 just works. A different one: `sudo bash deploy/vps-sync-setup.sh cashfra.com 445566`.
 
 The code never leaves the device. What reaches the server is 200,000 rounds of
-PBKDF2 over it — the setup script computes the same value, and `test/code-login.mjs`
-checks the two agree, because a mismatch would lock ALFA out of his own book with
-both sides looking correct.
+PBKDF2 over it. Those numbers live in one place — `sync-server.js`, which the
+setup script calls (`--ensure <code>`) rather than repeating them — and
+`test/code-login.mjs` compares that against what the browser derives, because a
+drift between the two would lock ALFA out of his own book with both sides
+looking correct.
+
+`--ensure` also **adopts a book left over from an earlier way in** rather than
+starting an empty one beside it: a stranded ledger is a lost one. With several
+books and no way to tell which is his, it stops and lists them.
 
 The script creates a `cashfra` system user, a systemd unit for
 `deploy/sync-server.js` on a free loopback port (it walks 8787-8799 — the first
@@ -162,6 +168,10 @@ served from the server it syncs with, so it already knows where to look.
   exchange** — a device that gave up there would sit on its entry until it was
   next edited, silently out of step.
 - A device pulls when the app comes back to the foreground, not only on unlock.
+- The empty-book card says one thing at a time. It reads the actual state —
+  fetching, wrong code for this server, unreachable, or genuinely empty — and
+  the screen repaints when a sync fails, so it cannot sit on "Fetching your
+  book…" long after the fetch gave up.
 - **Changing the code moves the book.** Settings → App lock → Change code
   re-keys the server, so the ledger follows; other devices then need the new
   code. Do not change it by re-running the setup script — that would leave the
@@ -254,7 +264,7 @@ Opening `index.html` over `file://` still works — the app falls back to
 
 ## Tests
 
-Ten Playwright suites, 270 checks. They are for this repo only and never ship
+Ten Playwright suites, 273 checks. They are for this repo only and never ship
 to the server. The price feed is always stubbed, so the suites are hermetic.
 
 ```sh
@@ -357,7 +367,7 @@ against the fixed code, then re-run with the fix removed: an assertion nobody
 has watched fail is not yet a test, and the first version of the race check
 passed either way.
 
-`code-login.mjs` (19 checks) covers the access code being the login. Its first
+`code-login.mjs` (22 checks) covers the access code being the login. Its first
 check is the one that matters most: the browser and the setup script must derive
 the same key from the same code, or ALFA is locked out of his own book with both
 sides looking correct. Then the shape of it — a second device typing the code and

@@ -248,6 +248,37 @@ function rotate(email) {
 }
 if (process.argv[2] === '--rotate') { rotate(process.argv[3]); process.exit(0); }
 
+/* The key the access code makes, and the book it names. The app derives the
+   same value in the browser; keeping the one true copy of these numbers here,
+   with the setup script calling it rather than repeating it, is what stops the
+   two drifting apart and locking ALFA out of his own ledger. */
+const CODE_SALT = 'cashfra-sync-v1', CODE_ITER = 200000;
+const keyFor = code => crypto.pbkdf2Sync(String(code), CODE_SALT, CODE_ITER, 32, 'sha256').toString('hex');
+
+function ensure(code) {
+  if (!code) { console.error('usage: --ensure <access-code>'); process.exit(1); }
+  const key = keyFor(code);
+  if (fs.existsSync(file(key))) { console.log(key); return; }
+  const books = fs.readdirSync(DIR).filter(f => /^[A-Za-z0-9_-]{16,128}\.json$/.test(f));
+  if (books.length === 1) {
+    /* A book left over from an earlier way in. Move it onto this code rather
+       than starting an empty one beside it — a stranded ledger is a lost one. */
+    fs.renameSync(path.join(DIR, books[0]), file(key));
+    console.error('moved the book already here onto this access code');
+  } else if (books.length === 0) {
+    writeAtomic(file(key), { version: 0, at: 0, data: null });
+    console.error('made a new book for this access code');
+  } else {
+    console.error('there are ' + books.length + ' books here and no way to tell which is yours:');
+    books.forEach(b => console.error('  ' + b));
+    console.error('move the ones you do not want aside, then run this again.');
+    process.exit(1);
+  }
+  console.log(key);
+}
+if (process.argv[2] === '--ensure') { ensure(process.argv[3]); process.exit(0); }
+if (process.argv[2] === '--key') { console.log(keyFor(process.argv[3])); process.exit(0); }
+
 function authStart(req, res) { readJson(req, res, j => startWith(j, res)); }
 function startWith(j, res) {
   {

@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-08-31-13">
+<meta name="cashfra-build" content="2026-08-31-14">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -1177,24 +1177,34 @@ function renderList(M){
 }
 /* An empty book on a device that should have one is the moment to say what
    sync is doing. Silence here is what made ALFA think the whole thing was
-   broken: he typed the right code, landed on nothing, and nothing explained
-   why. Only while the book is empty — never over a device in use. */
+   broken. The heading has to match the message underneath it: a card reading
+   "Nothing on the server yet" over "Wrong access code" says two things at
+   once and neither of them helps. */
+function joinCard(e,h,p,btn){
+ return'<div class="join"><span class="e">'+e+'</span><h3>'+esc(h)+'</h3><p>'+esc(p)+'</p>'+
+  (btn||'')+'</div>';
+}
 function signInCard(){
  if(S.tx.length)return'';
- var url=syncUrl();
+ var url=syncUrl(),c=S.sync||{};
  if(!url)return'';
- if(!S.lockHash)
-  return'<div class="join"><span class="e">\u2601\ufe0f</span><h3>Set an access code</h3>'+
-   '<p>Your code is the key to your book. Set one and this device shows the same entries as your others.</p>'+
-   '<button class="bp" data-panel="set" data-goto="sync">Open settings</button></div>';
- if(!syncOn()||syncBusy)
-  return'<div class="join"><span class="e">\u2601\ufe0f</span><h3>Fetching your book\u2026</h3>'+
-   '<p>Signed in with your access code. If you have logged anything on another device, it appears here in a moment.</p></div>';
- if(!num((S.sync||{}).at))
-  return'<div class="join"><span class="e">\u2601\ufe0f</span><h3>Nothing on the server yet</h3>'+
-   '<p>'+esc(syncMsg||'This is the first device to use this code. What you log here is what the others will find.')+'</p>'+
-   '<button class="bs" data-sync="now">Try again</button></div>';
- return'';
+ var again='<button class="bs" data-sync="now">Try again</button>';
+ if(!S.lockHash&&!c.token)
+  return joinCard('\ud83d\udd11','Set an access code',
+   'Your code is the key to your book. Set one and this device shows the same entries as your others.',
+   '<button class="bp" data-panel="set" data-goto="sync">Open settings</button>');
+ if(syncBusy||!syncOn())
+  return joinCard('\u2601\ufe0f','Fetching your book\u2026',
+   'Your access code is the key. If you have logged anything on another device, it appears here in a moment.');
+ if(num(c.at))return'';                     /* synced fine; the book really is empty */
+ var m=syncMsg||'';
+ if(/access code/i.test(m))
+  return joinCard('\ud83d\udd11','This code does not open the book on the server',
+   'The book at '+url+' was set up with a different access code. Type that one instead \u2014 or, if this server has no book yet, run vps-sync-setup.sh on it.',again);
+ if(m&&!/^Synced|^Fetching/.test(m))
+  return joinCard('\u2601\ufe0f','Could not reach your book',m,again);
+ return joinCard('\u2601\ufe0f','Nothing on the server yet',
+  'This is the first device to use this code. What you log here is what the others will find.',again);
 }
 function demoLine(){
  return S.demo?'<div class="dm">These are sample entries \u00b7 <button data-wipe="1">Clear and start fresh</button></div>':'';
@@ -1627,6 +1637,10 @@ function syncNow(quiet,retry){
  })['catch'](function(e){
   syncBusy=false;
   syncSet(String(e&&e.message||e));
+  /* An empty screen still showing "Fetching your book…" long after the fetch
+     failed is the silence this card exists to break. Repaint so it can say
+     what actually happened. */
+  if(appStarted&&!S.tx.length)render();
   return false;
  });
 }

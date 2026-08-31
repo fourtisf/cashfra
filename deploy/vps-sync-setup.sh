@@ -91,35 +91,17 @@ install -d -m 755 "$LIB"
 install -m 644 "$SRC/deploy/sync-server.js" "$LIB/sync-server.js"
 
 # ── the key, made from the access code ──────────────────────────────────────
-# The app derives exactly this in the browser; if the two ever disagree ALFA is
-# locked out of his own book with everything looking right on both sides, which
-# is why test/code-login.mjs compares them.
-KEY=$(node -e '
-  const c = require("crypto");
-  process.stdout.write(c.pbkdf2Sync(process.argv[1], "cashfra-sync-v1", 200000, 32, "sha256").toString("hex"));
-' "$CODE")
+# The service owns these numbers; asking it rather than repeating them here is
+# what stops the two drifting apart and locking ALFA out of his own ledger.
+# It also adopts a book left over from an earlier way in, rather than starting
+# an empty one beside it.
+KEY=$(DATA_DIR="$DATA" node "$LIB/sync-server.js" --ensure "$CODE") || {
+  echo "!!  could not set up the book for that access code" >&2; exit 1; }
 case "$KEY" in
   [0-9a-f]*) : ;;
   *) echo "could not derive the key from the access code" >&2; exit 1 ;;
 esac
-if [ -f "$DATA/$KEY.json" ]; then
-  echo "==> the book for this access code is already here"
-else
-  # An existing book under a different key means the code changed. Say so
-  # rather than quietly starting an empty second book beside the real one.
-  other=$(find "$DATA" -maxdepth 1 -name '*.json' -printf '%f\n' 2>/dev/null | head -1 || true)
-  if [ -n "$other" ]; then
-    echo "!!  There is already a book on this server, under a different access code."
-    echo "    Starting a new one would leave it stranded. If you meant to change the"
-    echo "    code, do it in the app (Settings -> App lock -> Change code) — the book"
-    echo "    moves with it. If you really want a second, empty book, move the old"
-    echo "    one aside first:  sudo mv $DATA/$other $DATA/$other.bak"
-    exit 1
-  fi
-  printf '{"version":0,"at":0,"data":null}' > "$DATA/$KEY.json"
-  chown cashfra:cashfra "$DATA/$KEY.json"; chmod 600 "$DATA/$KEY.json"
-  echo "==> made the book for this access code"
-fi
+chown cashfra:cashfra "$DATA/$KEY.json"; chmod 600 "$DATA/$KEY.json"
 
 # ── systemd ─────────────────────────────────────────────────────────────────
 cat > "$UNIT" <<UNIT
