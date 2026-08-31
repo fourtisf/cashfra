@@ -5,7 +5,7 @@
  * Nothing here touches app data — the ledger lives in localStorage, never in
  * the cache, so activating a new shell can never drop a single entry.
  */
-var BUILD = '2026-08-31-5';
+var BUILD = '2026-08-31-7';
 var CACHE = 'cashfra-' + BUILD;
 var SHELL = [
   './',
@@ -53,6 +53,11 @@ self.addEventListener('fetch', function (e) {
   var url;
   try { url = new URL(req.url); } catch (err) { return; }
   if (url.origin !== self.location.origin) return;
+
+  /* the ledger sync is live data, not shell. Serving it from the cache would
+     hand the app a stale version number, and every write after that would be
+     refused as out of date — so it goes straight to the network. */
+  if (req.headers.get('X-Cashfra-Token')) return;
 
   /* every navigation gets the cached shell, refreshed in the background */
   var key = (req.mode === 'navigate') ? './index.html' : req;

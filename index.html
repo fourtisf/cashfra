@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-08-31-5">
+<meta name="cashfra-build" content="2026-08-31-7">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -100,6 +100,8 @@ button,label.sw,.row,.gk{cursor:pointer;-webkit-tap-highlight-color:transparent;
 .nt .pcg{font-family:var(--disp);font-weight:800;font-size:16px;flex:none;font-variant-numeric:tabular-nums}
 .ratehint{font-size:12px;color:var(--amber);font-weight:600;margin-top:7px;line-height:1.5}
 .ratehint button{color:var(--brand-ink);font-weight:700;font-size:12px;text-decoration:underline;padding:0}
+.duphint{font-size:12px;color:var(--amber);background:var(--amber-soft);border-radius:12px;
+  padding:9px 12px;margin-top:9px;font-weight:600;line-height:1.5;text-align:left}
 
 /* ── section head ── */
 .seh{display:flex;align-items:center;gap:10px;padding:24px 4px 12px}
@@ -271,6 +273,8 @@ button,label.sw,.row,.gk{cursor:pointer;-webkit-tap-highlight-color:transparent;
 .mixr .sb{font-size:12px;color:var(--faint);font-weight:500;margin-top:2px}
 .mixr .pc{font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--disp);flex:none;font-size:15px}
 .cli{padding:4px 0 12px;position:relative}
+.cli>.kv{width:100%;text-align:left;background:none}
+.cli>.kv:active{opacity:.6}
 .cli+.cli::before{content:"";position:absolute;top:0;left:2px;right:2px;height:1px;background:var(--line)}
 .ctc{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:0 2px}
 .ctc input{flex:1;min-width:120px;background:#F5F5F9;border-radius:11px;padding:8px 11px;font-size:13px}
@@ -588,6 +592,7 @@ body.locked{overflow:hidden}
         <input class="big" id="fAmt" type="text" inputmode="decimal" placeholder="0" autocomplete="off" aria-label="Amount">
         <div class="usdline">&#8776; <b id="fUsd">$0.00</b> &nbsp;&middot;&nbsp; rate $<input id="fRate" type="text" inputmode="decimal" placeholder="0" aria-label="USD rate"></div>
         <div class="ratehint hide" id="rateHint"></div>
+        <div class="duphint hide" id="dupHint"></div>
       </div>
       <div class="toks" id="toks"></div>
 
@@ -616,6 +621,7 @@ body.locked{overflow:hidden}
           </select></div>
           <div class="fr hide" id="rPaid"><label>Received so far (USD)</label><input id="fPaid" type="number" step="any" placeholder="0"></div>
         </div>
+        <div class="duphint hide" id="cashWarn">⚠️ Listings are paid in full, up front — there is no instalment and no debt on one. If this really was not settled, it is worth checking the entry.</div>
         <div class="fr"><label>Announcement link</label><input id="fLink" autocomplete="off" placeholder="https://x.com/... or t.me/..."><div class="hint hide" id="linkOpen"></div></div>
         <div class="fr"><label>Tx hash</label><input id="fHash" autocomplete="off" placeholder="Optional"></div>
         <div class="fr"><label>Note</label><textarea id="fNote" placeholder="Optional"></textarea></div>
@@ -762,11 +768,13 @@ var DEF={v:3,tx:[],
  brand:'Fourtis',
  idr:16300, last:{tok:'SOL',ch:'SOL'}, demo:false, recSkip:'', lockHash:'', lockSalt:'', lockLen:0, lockNum:true, lockPreset:'',
  rateAuto:true, rateAt:0, bkAt:0, goal:0, lockIdle:300, contacts:{}, caps:[], seedFix:'',
+ sync:{url:'',token:'',ver:0,at:0},
  wallets:[['SOL',''],['BSC',''],['ETH',''],['BASE',''],['TRON','']], invNote:''
 };
 var S=clone(DEF);
 var anchor=new Date(), flt='', editId=null, fType='in', fTokV='SOL', fChainV='SOL', fBrandV='', brandView='', formPkg='', panel='menu', undoBuf=null;
-var mixAll=false, ratePrefill='', rateBusy=false, hidAt=0, autoLocked=false, costOf='spend';
+var mixAll=false, ratePrefill='', rateBusy=false, hidAt=0, autoLocked=false, costOf='spend', cliOpen='';
+var syncBusy=false, syncMsg='', syncT=null, syncSaving=false;
 
 function clone(o){return JSON.parse(JSON.stringify(o));}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
@@ -867,6 +875,9 @@ function normalizeTx(){
 }
 var sT=null;
 function save(){
+ /* a save made by the sync itself must not schedule another one, or the two
+    call each other forever and the server is hit every few seconds */
+ if(!syncSaving)syncSoon();
  if(!ST)return;
  clearTimeout(sT);
  sT=setTimeout(function(){
@@ -1306,6 +1317,21 @@ function pkgCat(name){
  return'Listing';
 }
 function monthRevenue(){return totals(monthOnlyTx()).gi;}
+/* Listings are cash in full, up front — a listing on credit is a typo, not a
+   receivable (CASHFRA-HANDOFF.md, rule 2). Say so rather than silently
+   forbidding it: other lines really can be arranged differently. */
+var CASH_ONLY=['Listing','Xpress listing'];
+/* Choosing the category sets the honest default. Changing the status after
+   that is ALFA's own call — answer it with the reason, never by silently
+   snapping the box back to Paid, which only looks broken. */
+function cashOnly(byHand){
+ var isCash=fType==='in'&&CASH_ONLY.indexOf(catVal())>=0;
+ var st=$('#fStat'),warn=$('#cashWarn');
+ if(isCash&&!byHand&&!editId&&st.value!=='paid')st.value='paid';
+ warn.classList.toggle('hide',!(isCash&&st.value!=='paid'));
+ if(isCash&&st.value!=='paid')$('#acc').open=true;   /* a warning nobody can see is no warning */
+ $('#rPaid').classList.toggle('hide',$('#fStat').value!=='dp');
+}
 function togglePct(){
  var show=fType==='out'&&catVal()==='Team bonus';
  $('#rPct').classList.toggle('hide',!show);
@@ -1391,6 +1417,89 @@ function linkOpen(){
   el.innerHTML='<a href="'+esc(v)+'" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;text-decoration:none">Open link \u2197</a>';
  }else{el.classList.add('hide');el.innerHTML='';}
 }
+/* sync -----------------------------------------------------------------------
+   One ledger across phone, laptop and the installed app, held on ALFA's own
+   server. Off until a URL and token are entered.
+
+   Merging is by entry id, and a union: an entry either side has is kept. Two
+   devices editing the same entry is the only case that has to pick, and it
+   picks the later `mt`. Losing an edit is recoverable; losing an entry is not,
+   so the merge never deletes. Deleting an entry on one device therefore needs
+   the other device to be online to see it — the honest trade for never eating
+   somebody's work. */
+function syncOn(){var c=S.sync||{};return !!(c.url&&c.token);}
+function syncCfg(){if(!S.sync)S.sync={url:'',token:'',ver:0,at:0};return S.sync;}
+function syncSet(m){syncMsg=m;if($('#ovPanel').classList.contains('on')&&panel==='set')repaint();}
+function mergeTx(mine,theirs){
+ var by={},out=[],i,t;
+ for(i=0;i<mine.length;i++)by[mine[i].id]=mine[i];
+ for(i=0;i<theirs.length;i++){
+  t=theirs[i];
+  var have=by[t.id];
+  if(!have||num(t.mt)>num(have.mt))by[t.id]=t;
+ }
+ for(var k in by)if(by.hasOwnProperty(k))out.push(by[k]);
+ out.sort(function(a,b){return b.date.localeCompare(a.date)||String(b.id).localeCompare(String(a.id));});
+ return out;
+}
+function syncReq(method,body){
+ var c=syncCfg();
+ return fetch(c.url,{
+  method:method,cache:'no-store',
+  headers:{'Content-Type':'application/json','X-Cashfra-Token':c.token},
+  body:body?JSON.stringify(body):undefined
+ }).then(function(r){
+  return r.json()['catch'](function(){return{};}).then(function(j){return{code:r.status,body:j};});
+ });
+}
+/* pull, merge, push — the whole exchange, safe to call at any time */
+function syncNow(quiet){
+ if(!syncOn()||syncBusy)return Promise.resolve(false);
+ syncBusy=true;
+ if(!quiet)syncSet('Syncing…');
+ return syncReq('GET').then(function(r){
+  if(r.code===401)throw new Error('Server did not recognise the token');
+  if(r.code!==200)throw new Error('Server said '+r.code);
+  var remote=r.body.data;
+  if(remote&&Array.isArray(remote.tx)){
+   var merged=mergeTx(S.tx,remote.tx);
+   var grew=merged.length!==S.tx.length;
+   S.tx=merged;
+   /* settings follow whichever side was written last */
+   if(num(r.body.at)>num(syncCfg().at)){
+    ['rates','pkgs','team','chains','brands','caps','wallets','contacts'].forEach(function(k){
+     if(remote[k]!==undefined)S[k]=remote[k];
+    });
+    if(remote.idr!==undefined)S.idr=remote.idr;
+    if(remote.invNote!==undefined)S.invNote=remote.invNote;
+    if(remote.goal!==undefined)S.goal=remote.goal;
+   }
+   if(grew){fillStatic();render();}
+  }
+  var payload=clone(S);
+  delete payload.sync;delete payload.lockHash;delete payload.lockSalt;   /* the code stays on the device */
+  return syncReq('PUT',{base:num(r.body.version),data:payload});
+ }).then(function(r){
+  if(r.code===409)throw new Error('Another device wrote first — try again');
+  if(r.code!==200)throw new Error('Server said '+r.code);
+  if(!S.sync)S.sync={url:'',token:'',ver:0,at:0};
+  S.sync.ver=num(r.body.version);S.sync.at=num(r.body.at);
+  syncBusy=false;
+  syncSaving=true;save();syncSaving=false;
+  syncSet('Synced '+relTime(S.sync.at));
+  return true;
+ })['catch'](function(e){
+  syncBusy=false;
+  syncSet(String(e&&e.message||e));
+  return false;
+ });
+}
+function syncSoon(){
+ if(!syncOn())return;
+ clearTimeout(syncT);
+ syncT=setTimeout(function(){syncNow(true);},4000);
+}
+
 /* live prices --------------------------------------------------------------
    This only ever writes S.rates and S.idr, which prefill the rate box on a
    NEW entry. Entries already logged keep the rate and the USD they were saved
@@ -1452,6 +1561,28 @@ function fetchRates(force){
  })['catch'](function(){rateBusy=false;return -1;});
 }
 var RATE_STALE=864e5;   /* a day */
+/* Logging the same deal twice is easy when you cannot remember whether you
+   already did. Say so before it is saved, rather than leaving a quiet double
+   in the books. */
+function dupOf(){
+ var amt=num($('#fAmt').value),party=$('#fParty').value.trim().toLowerCase(),date=$('#fDate').value;
+ if(!amt||!date)return null;
+ for(var i=0;i<S.tx.length;i++){
+  var t=S.tx[i];
+  if(t.id===editId||t.type!==fType||t.brand!==fBrandV)continue;
+  if(t.date!==date||Math.abs(num(t.amt)-amt)>1e-9||t.tok!==fTokV)continue;
+  if(String(t.party||'').trim().toLowerCase()!==party)continue;
+  return t;
+ }
+ return null;
+}
+function dupHint(){
+ var el=$('#dupHint'),t=editId?null:dupOf();
+ el.classList.toggle('hide',!t);
+ if(t)el.innerHTML='⚠️ Already logged: '+esc(t.party||'no name')+' · '+
+   esc(tokf(num(t.amt))+' '+t.tok)+' on '+esc(dmy(t.date))+
+   '. Save again only if this really happened twice.';
+}
 function rateHint(){
  var el=$('#rateHint'),msg='';
  /* only worth saying for a new entry, on a coin the feed actually covers */
@@ -1485,6 +1616,8 @@ function calc(){
  $('#accSum').textContent=b.length?('\u00b7 '+b.join(' \u00b7 ')):'';
  $('#rPaid').classList.toggle('hide',$('#fStat').value!=='dp');
  rateHint();
+ dupHint();
+ cashOnly(true);        /* calc runs on every keystroke; it must not overrule a choice */
 }
 function setType(){
  $$('#seg button').forEach(function(b){
@@ -1562,7 +1695,7 @@ function commit(){
    return{to:String(c.to||'').trim(),pct:+num(c.pct).toFixed(2),usd:+num(c.usd).toFixed(2),paid:!!c.paid};
   }):[],
   link:$('#fLink').value.trim(),hash:$('#fHash').value.trim(),
-  note:$('#fNote').value.trim(),recur:$('#fRecur').checked};
+  note:$('#fNote').value.trim(),recur:$('#fRecur').checked,mt:Date.now()};
  if(editId){
   for(var i=0;i<S.tx.length;i++)if(S.tx[i].id===editId)S.tx[i]=rec;
   toast('Entry updated');
@@ -1613,6 +1746,7 @@ $('#fAmt').addEventListener('input',function(e){
 $('#fLink').addEventListener('input',function(){linkOpen();calc();});
 $('#fStat').addEventListener('change',calc);
 $('#fRecur').addEventListener('change',calc);
+$('#fDate').addEventListener('change',calc);   /* the date keys the duplicate check */
 
 $('#pre').addEventListener('click',function(e){
  var b=e.target.closest('[data-pk],[data-ct]');if(!b)return;
@@ -1645,8 +1779,11 @@ $('#partyHint').addEventListener('click',function(e){
  if(r)$('#fAmt').value=String(parseFloat((num(u.dataset.usea)/r).toFixed(6)));
  calc();
 });
-$('#fParty').addEventListener('input',partyHint);
-$('#fCat').addEventListener('change',togglePct);
+/* the duplicate check keys on the client too, so it has to be redone as the
+   name is typed — not only when the amount changes */
+$('#fParty').addEventListener('input',function(){partyHint();dupHint();});
+$('#fCat').addEventListener('change',function(){togglePct();cashOnly();});
+$('#fStat').addEventListener('change',function(){cashOnly(true);});
 $('#fPct').addEventListener('input',function(){
  var rev=monthRevenue(),p=num(this.value);
  if(!num($('#fRate').value))autoRate();
@@ -1679,6 +1816,7 @@ $('#fAgain').onclick=function(){
 var TITLES={menu:'Menu',com:'Commission',ins:'Insights',cli:'Clients',set:'Settings',data:'Your data'};
 function openPanel(w){
  panel=w||'menu';
+ if(panel!=='cli')cliOpen='';
  $('#pTitle').textContent=TITLES[panel];
  $('#pBack').classList.toggle('hide',panel==='menu');
  $('#pBody').innerHTML=panelHtml();
@@ -1688,7 +1826,7 @@ function repaint(){$('#pBody').innerHTML=panelHtml();}
 function panelHtml(){
  if(panel==='com')return comHtml();
  if(panel==='ins')return insHtml();
- if(panel==='cli')return cliHtml();
+ if(panel==='cli')return cliOpen?oneCliHtml():cliHtml();
  if(panel==='set')return setHtml();
  if(panel==='data')return dataHtml();
  var t=totals(S.tx.filter(inScope));
@@ -2153,11 +2291,32 @@ function cliHtml(){
   ' \u00b7 ranked by what is left after commission</p>'+
   '<div class="sec">'+e.map(function(x){
   var k=x[0],o=x[1],due=o.v-o.r,net=o.v-o.c,ct=(S.contacts||{})[k]||'';
-  return'<div class="cli"><div class="kv" style="padding-bottom:8px"><span>'+esc(k)+'<div class="s">'+o.d+(o.d===1?' deal':' deals')+' \u00b7 last '+dmy(o.last)+
+  return'<div class="cli"><button class="kv" data-cli="'+esc(k)+'" style="padding-bottom:8px"><span>'+esc(k)+'<div class="s">'+o.d+(o.d===1?' deal':' deals')+' \u00b7 last '+dmy(o.last)+
    (due>0?' \u00b7 <span style="color:var(--out);font-weight:700">'+usd(due)+' owed</span>':'')+'</div></span>'+
-   '<span class="r"><b>'+usd(net)+'</b><div class="s">'+(o.c?'after '+usd(o.c)+' fee':'of '+usd(o.v))+'</div></span></div>'+
+   '<span class="r"><b>'+usd(net)+'</b><div class="s">'+(o.c?'after '+usd(o.c)+' fee':'of '+usd(o.v))+'</div></span></button>'+
    '<div class="ctc"><input value="'+esc(ct)+'" data-ct2="'+esc(k)+'" placeholder="@handle or link" autocomplete="off">'+contactLinks(ct)+'</div></div>';
  }).join('')+'</div>';
+}
+function oneCliHtml(){
+ var k=cliOpen,L=S.tx.filter(function(t){return inScope(t)&&t.type==='in'&&t.party===k;})
+   .sort(function(a,b){return b.date.localeCompare(a.date);});
+ if(!L.length)return'<p class="tiny">Nothing for this client in '+esc(brandView||'any brand')+'.</p>';
+ var v=0,c=0,r=0;
+ L.forEach(function(t){v+=num(t.usd);c+=comv(t);r+=recv(t);});
+ var ct=(S.contacts||{})[k]||'';
+ return'<div class="sec"><div class="tot3">'+
+   '<div><div class="t">Deals</div><div class="v">'+L.length+'</div></div>'+
+   '<div><div class="t">Booked</div><div class="v">'+usdc(v)+'</div></div>'+
+   '<div><div class="t">After fee</div><div class="v">'+usdc(v-c)+'</div></div></div>'+
+  (ct?'<div class="ctc" style="margin-top:12px"><input value="'+esc(ct)+'" data-ct2="'+esc(k)+'" placeholder="@handle or link">'+contactLinks(ct)+'</div>':'')+
+  '</div>'+
+  '<div class="sec"><h3>Every deal</h3>'+L.map(function(t){
+   var fee=comv(t);
+   return'<div class="kv"><span>'+cmeta(t.cat)[0]+' '+esc(t.cat)+
+    '<div class="s">'+esc(dmy(t.date))+' · '+esc(tokf(num(t.amt))+' '+t.tok)+
+    (t.chain?' · '+esc(t.chain):'')+(fee?' · fee '+usdc(fee):'')+'</div></span>'+
+    '<span class="r"><b>'+usdc(num(t.usd)-fee)+'</b><div class="s">of '+usdc(num(t.usd))+'</div></span></div>';
+  }).join('')+'</div>';
 }
 function setHtml(){
  function pair(k,arr,p1,p2){
@@ -2198,6 +2357,17 @@ function setHtml(){
   pairT('wallets',S.wallets,'Chain','Address')+'</div>'+
   '<div class="sec"><h3>Invoice terms</h3>'+
   '<div class="fr"><textarea id="pInvNote" placeholder="e.g. Listing goes live within 24h of payment.">'+esc(S.invNote||'')+'</textarea></div></div>'+
+  '<div class="sec"><h3>Sync across devices</h3>'+
+  '<p class="tiny">Your phone, your laptop and the installed app each keep their own copy '+
+  'unless this is on. Entries are merged by id, so nothing is ever lost to a device that was '+
+  'behind \u2014 but a deletion only spreads while the other device is online. '+
+  'Runs on your own server; the access code never leaves this device.</p>'+
+  '<div class="fr"><label>Server address</label><input id="pSyncUrl" autocomplete="off" placeholder="https://cashfra.com/sync" value="'+esc((S.sync||{}).url||'')+'"></div>'+
+  '<div class="fr"><label>Token</label><input id="pSyncTok" autocomplete="off" placeholder="from vps-sync-setup.sh" value="'+esc((S.sync||{}).token||'')+'"></div>'+
+  '<div class="wrapb"><button class="bs" data-sync="now">Sync now</button></div>'+
+  '<p class="tiny" style="margin:10px 0 0">'+
+   (syncMsg?esc(syncMsg):(syncOn()?(num((S.sync||{}).at)?'Last synced '+esc(relTime(num(S.sync.at))):'Not synced yet'):'Off \u2014 this device keeps its own copy'))+
+   '</p></div>'+
   '<div class="sec"><h3>Spending caps \u00b7 % of money in</h3>'+
   '<p class="tiny">A ceiling per category, checked against each period in Insights. Use the exact category name, e.g. Tip shiller or Team commission.</p>'+
   pair('caps',S.caps,'Category','%')+'</div>'+
@@ -2237,7 +2407,7 @@ function dataHtml(){
 
 /* global events */
 document.addEventListener('click',function(e){
- var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-seed],[data-mix],[data-cshare],[data-rate],[data-lock]');
+ var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-seed],[data-mix],[data-cshare],[data-rate],[data-sync],[data-cli],[data-lock]');
  if(!el)return;
  var d=el.dataset;
  if(d.lock!==undefined){
@@ -2251,8 +2421,14 @@ document.addEventListener('click',function(e){
   }
   return;
  }
+ if(d.cli!==undefined){cliOpen=d.cli;$('#pTitle').textContent=d.cli;$('#pBack').classList.remove('hide');repaint();return;}
  if(d.mix!==undefined){mixAll=(d.mix==='all');repaint();return;}
  if(d.cshare!==undefined){costOf=d.cshare;repaint();return;}
+ if(d.sync!==undefined){
+  if(!syncOn()){toast('Add the server address and token first');return;}
+  syncNow(false).then(function(okc){toast(okc?'Synced':(syncMsg||'Sync failed'));});
+  return;
+ }
  if(d.rate!==undefined){
   toast('Checking prices\u2026');
   fetchRates(true).then(function(n){
@@ -2337,7 +2513,12 @@ document.addEventListener('input',function(e){
  }
  if(e.target.id==='pIdr'){S.idr=num(e.target.value);save();render();return;}
  if(e.target.id==='pGoal'){S.goal=num(e.target.value);save();render();return;}
- if(e.target.id==='pInvNote'){S.invNote=e.target.value;save();}
+ if(e.target.id==='pInvNote'){S.invNote=e.target.value;save();return;}
+ if(e.target.id==='pSyncUrl'||e.target.id==='pSyncTok'){
+  if(!S.sync)S.sync={url:'',token:'',ver:0,at:0};
+  S.sync[e.target.id==='pSyncUrl'?'url':'token']=e.target.value.trim();
+  syncMsg='';save();
+ }
 });
 document.addEventListener('change',function(e){
  if(e.target.dataset.ct2!==undefined){repaint();return;}
@@ -2376,7 +2557,10 @@ $('#addBtn2').onclick=function(){openForm(null);};
 $('#prev').onclick=function(){step(-1);};
 $('#next').onclick=function(){step(1);};
 $('#moreBtn').onclick=function(){openPanel('menu');};
-$('#pBack').onclick=function(){openPanel('menu');};
+$('#pBack').onclick=function(){
+ if(panel==='cli'&&cliOpen){cliOpen='';openPanel('cli');return;}   /* back to the list first */
+ openPanel('menu');
+};
 $('#pX').onclick=function(){$('#ovPanel').classList.remove('on');};
 $('#pClose').onclick=function(){$('#ovPanel').classList.remove('on');};
 $('#ovPanel').onclick=function(e){if(e.target===this)this.classList.remove('on');};
@@ -2630,6 +2814,7 @@ function startApp(){
  autoLocked=false;
  hideGate();
  fetchRates();
+ syncNow(true);
  if(toastAfterUnlock){toast(toastAfterUnlock);toastAfterUnlock='';}
 }
 function gerr(m){

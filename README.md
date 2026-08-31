@@ -1,8 +1,9 @@
 # Cashfra
 
 ALFA's private bookkeeping app for the token-listing business — money in, money
-out, per-person commissions, receivables, recurring costs and growth analytics,
-across brands, behind a PIN.
+out, per-person commissions, recurring costs and growth analytics, across
+brands, behind a PIN. Listings are cash in full, up front; the app is built
+around that and says so when an entry disagrees.
 
 This repo is the deployable version of the approved prototype. The app itself is
 still **one file with zero dependencies and no build step** — `index.html`
@@ -26,6 +27,8 @@ documents the data model and the business rules that must not change.
 | `deploy/vps-setup.sh` | One-command deploy to an Ubuntu VPS, then checks the result. |
 | `deploy/vps-update.sh` | Pull the latest and redeploy, in one command. |
 | `deploy/nginx.conf` | The nginx site it installs (certbot adds TLS to it). |
+| `deploy/sync-server.js` | Optional. ~90 lines of Node that hold one JSON blob per token, so several devices can share one ledger. |
+| `deploy/vps-sync-setup.sh` | Turns that on: service user, token, systemd unit, nginx `/sync`, then checks it. |
 | `deploy/upload-ftp.sh` · `.ps1` | The same, for shared hosting with only FTP. |
 | `robots.txt` | Belt and braces on top of the `noindex` header. |
 | `bump-version.sh` | Bumps the service-worker cache name. Run before each deploy. |
@@ -113,6 +116,51 @@ sudo systemctl reload nginx
 
 Only the app is published: no `.md`, no `deploy/`, no `test/`, no `.git`.
 
+### Sync across devices — optional
+
+Off by default, and the app is complete without it: each device keeps its own
+copy in `localStorage`. Turn it on when the phone and the laptop need to show
+the same book.
+
+```sh
+sudo bash /opt/cashfra/deploy/vps-sync-setup.sh          # prints the token
+```
+
+It creates a `cashfra` system user, a token, a systemd unit for
+`deploy/sync-server.js` bound to `127.0.0.1:8787`, and an nginx `location =
+/sync` in front of it, then checks that the real token gets a 200 and a wrong
+one a 401. Re-running it is safe and prints the same token back.
+
+Then on each device: **Menu → Settings → Sync across devices**, enter the
+server address it printed (`https://cashfra.com/sync`) and the token, and
+**Sync now**. After that it runs on its own, a few seconds after any change.
+
+What it is and is not:
+
+- The server holds **one opaque JSON blob per token** and never parses it, so
+  it does not change when the ledger does.
+- **The access code never leaves the device.** `lockHash` and `lockSalt` are
+  stripped before anything is sent, and so is the token itself — each device
+  keeps its own code.
+- Merging is **a union by entry id**; the later `mt` wins a field-level clash.
+  A device that was offline for a week can never erase what the other one
+  wrote. The honest cost: **a deletion only spreads while the other device is
+  online**, because a merge that deletes could eat somebody's work.
+- Every write carries the version it was based on. A stale write gets a 409
+  and the current blob back, so the loser merges and retries instead of
+  overwriting.
+- A token names a file, and the file must already exist — the service never
+  opens accounts. A second book is `sudo -u cashfra tee
+  /var/lib/cashfra/<token>.json <<< '{"version":0,"at":0,"data":null}'`;
+  revoking one is `sudo rm` on that file.
+
+> The service worker must not cache the sync exchange — it is live data, not
+> shell. `sw.js` skips any request carrying `X-Cashfra-Token`. Without that
+> skip the app reads a cached version number, every write after it is refused
+> as stale, and a cached `401` even replays as a `200`. `test/sync.mjs` runs
+> the app and the endpoint on one origin, under a live worker, precisely so
+> that regression fails there instead of on ALFA's phone.
+
 ### Redeploying
 
 Always `./bump-version.sh` first — the shell is served cache-first, and the
@@ -150,13 +198,18 @@ build. `test/update.mjs` checks exactly this.
 - [ ] `curl -sI https://cashfra.com/ | grep -i x-robots-tag` returns the noindex header.
 - [ ] `curl -sI https://cashfra.com/sw.js | grep -i cache-control` says `no-cache`.
       (the deploy scripts check both for you)
+- [ ] Only if sync is on: log an entry on the phone, hit **Sync now** on the
+      laptop, and it appears. Then the reverse.
 
 ## Data
 
-There is no server, no account and no sync. The ledger lives in `localStorage`
-under `fourtis:ledger:v3` on the one device, and the service worker never caches
-it — deploys and cache purges cannot touch the numbers. Clearing the browser's
-site data *does* wipe it.
+The ledger lives in `localStorage` under `fourtis:ledger:v3` on the device, and
+the service worker never caches it — deploys and cache purges cannot touch the
+numbers. Clearing the browser's site data *does* wipe it.
+
+There is no account and no third party. Sync is off unless it is switched on,
+and when it is, it talks to ALFA's own VPS and nowhere else — see *Sync across
+devices* above.
 
 **The claude.ai prototype and this deployment are separate stores.** To carry
 existing data over: in the prototype, Settings → Backup JSON; in the deployed
@@ -179,20 +232,22 @@ Opening `index.html` over `file://` still works — the app falls back to
 
 ## Tests
 
-Six Playwright suites, 171 checks. They are for this repo only and never ship
+Eight Playwright suites, 206 checks. They are for this repo only and never ship
 to the server. The price feed is always stubbed, so the suites are hermetic.
 
 ```sh
 cd test && npm install && cd ..
 
-python3 dev-server.py 8123 &            # all but the deploy suite need a server
+python3 dev-server.py 8123 &            # the last two bring their own server
 BASE=http://127.0.0.1:8123/ node test/smoke.mjs
 BASE=http://127.0.0.1:8123/ node test/rates.mjs
 BASE=http://127.0.0.1:8123/ node test/features.mjs
 BASE=http://127.0.0.1:8123/ node test/analytics.mjs
 BASE=http://127.0.0.1:8123/ node test/landing.mjs
+BASE=http://127.0.0.1:8123/ node test/rules.mjs
 
 node test/update.mjs                    # starts and tears down its own server
+node test/sync.mjs                      # and its own sync service
 ```
 
 `smoke.mjs` (52 checks) walks the handoff's regression list on a Pixel viewport:
@@ -208,7 +263,7 @@ wobble pins to 1, USD→IDR follows, the call is throttled, the switch and the
 manual refresh work — and, the one that matters most, **entries already in the
 books keep the rate and USD they were saved with**.
 
-`features.mjs` (34 checks) covers the six later additions: the stale-price hint,
+`features.mjs` (41 checks) covers the six later additions: the stale-price hint,
 the backup reminder and its download, auto-lock across all three grace settings,
 client contacts and their Telegram/X links, the monthly target card, and the
 invoice sheet — including that an unpaid deal reads as a *Quotation*, that the
@@ -232,7 +287,26 @@ invisible, motion is off under `prefers-reduced-motion` without leaving the
 card hidden, tapping fast cannot trigger iOS double-tap zoom, and the approved
 phone layout is unmoved by any of it.
 
+`rules.mjs` (22 checks) covers the three guards that keep the book honest. A
+listing opens as *Paid in full*, and changing that by hand is answered with the
+reason rather than a silent snap back to Paid — the rule is ALFA's business
+fact, not a cage, so it explains and still saves. Trending, which really can be
+arranged differently, is left alone. The same deal typed twice is named before
+it is saved — matched on client, amount, coin, date and brand, and never
+against the entry being edited. And a client opens into every deal they have
+done, with *Back* returning to the client list before it leaves the panel.
+
 `update.mjs` (7 checks) ships a second build mid-run and verifies the handover
 described under *Redeploying*.
+
+`sync.mjs` (13 checks) runs two browser contexts as two devices against a real
+`sync-server.js` on a throwaway data directory, behind a thirty-line stand-in
+for nginx so the app and `/sync` share one origin under a live service worker —
+the production topology, and the only arrangement in which the worker can be
+caught caching the exchange. It checks that sync is off until a server is
+entered, that a device pushes on its own, that a second device pulls the whole
+ledger, that neither device's entries are lost to the other's merge, that two
+syncs back to back both land, that the access code and the token never reach
+the server, and that an unknown token gets a 401.
 
 Set `CHROME_PATH` if Playwright can't find a browser.
