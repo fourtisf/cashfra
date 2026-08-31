@@ -123,22 +123,61 @@ copy in `localStorage`. Turn it on when the phone and the laptop need to show
 the same book.
 
 ```sh
-sudo bash /opt/cashfra/deploy/vps-sync-setup.sh          # prints the token
+sudo ALLOW=you@gmail.com MAIL_MODE=smtp SMTP_HOST=smtp.gmail.com \
+     SMTP_USER=you@gmail.com SMTP_PASS='the app password' \
+     bash /opt/cashfra/deploy/vps-sync-setup.sh
 ```
 
-It creates a `cashfra` system user, a token, a systemd unit for
-`deploy/sync-server.js` bound to `127.0.0.1:8787`, and an nginx `location =
-/sync` in front of it, then checks that the real token gets a 200 and a wrong
-one a 401. Re-running it is safe and prints the same token back.
+`ALLOW` is the list of addresses that may sign in, comma separated. **There is
+no sign-up**: an address not on the list is turned away. The Gmail password
+must be an *app password* (myaccount.google.com → Security → App passwords);
+the normal one will not work. Leave the mail settings out and codes are
+written to `/var/lib/cashfra/outbox` instead of sent — a way in over SSH, not a
+finished setup, and the script says so loudly.
 
-Then on each device: **Menu → Settings → Sync across devices**, enter the
-server address it printed (`https://cashfra.com/sync`) and the token, and
-**Sync now**. After that it runs on its own, a few seconds after any change.
+It creates a `cashfra` system user, a systemd unit for `deploy/sync-server.js`
+on a free loopback port (it walks 8787-8799 — the first version assumed 8787
+was free and died on a box where it was not), and an nginx `location ^~ /sync`
+in front of it. Then it checks the two refusals that matter: an unknown token
+gets 401, an unknown address 403. If either is wrong it stops, retries both
+against `127.0.0.1` to say whether the fault is nginx or the service, and does
+**not** print sign-in instructions — a check that failed must not read as
+success. Re-running is safe: the port, the allow-list and the mail settings are
+read back from the installed unit, so `sudo bash deploy/vps-sync-setup.sh` with
+no arguments changes nothing.
+
+Then on each device: **Menu → Settings → Sign in**. The server address is
+already filled in (the app is served from it), so it is an email, then the six
+digits that arrive by mail. Every device signed in to the same address shares
+one book, and the history appears on its own — nothing is copied by hand.
+
+Signing in only *fetches* the token the sync has always used, so everything
+below the login is the machinery that was already tested. ALFA never sees a
+token.
+
+**Losing a device.** Every signed-in device holds the same token, so there is
+no per-device revoke. Move the account to a new one:
+
+```sh
+sudo -u cashfra node /usr/local/lib/cashfra/sync-server.js --rotate you@gmail.com
+```
+
+The ledger moves with it. The lost device is locked out; the others sign in
+again. An account whose book stayed behind under the old token would be a lost
+book, which is the one outcome this whole file exists to prevent.
 
 What it is and is not:
 
 - The server holds **one opaque JSON blob per token** and never parses it, so
   it does not change when the ledger does.
+- A code is six digits, lives ten minutes, dies after five wrong tries, and
+  cannot be used twice. Five codes per address per hour. Codes are stored
+  salted and hashed and compared in constant time — six digits is only safe if
+  guessing is not.
+- An address that is not allow-listed is told so plainly, rather than being
+  given a silent "check your inbox". That does let someone probe which
+  addresses are accepted; on one person's private server, a code they cannot
+  receive is the worse failure.
 - **The access code never leaves the device.** `lockHash` and `lockSalt` are
   stripped before anything is sent, and so is the token itself — each device
   keeps its own code.
@@ -237,7 +276,7 @@ Opening `index.html` over `file://` still works — the app falls back to
 
 ## Tests
 
-Nine Playwright suites, 250 checks. They are for this repo only and never ship
+Ten Playwright suites, 279 checks. They are for this repo only and never ship
 to the server. The price feed is always stubbed, so the suites are hermetic.
 
 ```sh
@@ -254,6 +293,7 @@ BASE=http://127.0.0.1:8123/ node test/brands.mjs
 
 node test/update.mjs                    # starts and tears down its own server
 node test/sync.mjs                      # and its own sync service
+node test/login.mjs                     # ...and its own SMTP server
 ```
 
 `smoke.mjs` (52 checks) walks the handoff's regression list on a Pixel viewport:
@@ -338,5 +378,20 @@ reopening the app is enough to pick the other's work up. Both were written
 against the fixed code, then re-run with the fix removed: an assertion nobody
 has watched fail is not yet a test, and the first version of the race check
 passed either way.
+
+`login.mjs` (29 checks) covers signing in. The server's own rules first: an
+address nobody allow-listed is turned away and no mail leaves, a wrong code is
+refused and says how many tries remain, a right one hands back a token, the
+same code cannot be used twice, and signing in again lands on the *same*
+account — otherwise the whole idea fails. Then losing a device: rotating moves
+the account to a new token, the old one stops working, **and the book moves
+with it**. Then the app: a second browser context with an empty ledger signs
+in with nothing but an email and six digits, and the first device's entries are
+there.
+
+It stands up a real SMTP server on implicit TLS with a throwaway certificate
+and makes the service deliver a code through it. Nothing here can reach Gmail,
+and an SMTP client that has never completed a conversation is not a client, it
+is a hope.
 
 Set `CHROME_PATH` if Playwright can't find a browser.

@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-08-31-9">
+<meta name="cashfra-build" content="2026-08-31-10">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -772,13 +772,14 @@ var DEF={v:3,tx:[],
  brand:'Fourtis',
  idr:16300, last:{tok:'SOL',ch:'SOL'}, demo:false, recSkip:'', lockHash:'', lockSalt:'', lockLen:0, lockNum:true, lockPreset:'',
  rateAuto:true, rateAt:0, bkAt:0, goal:0, lockIdle:300, contacts:{}, caps:[], seedFix:'',
- sync:{url:'',token:'',ver:0,at:0},
+ sync:{url:'',token:'',email:'',ver:0,at:0},
  wallets:[['SOL',''],['BSC',''],['ETH',''],['BASE',''],['TRON','']], invNote:''
 };
 var S=clone(DEF);
 var anchor=new Date(), flt='', editId=null, fType='in', fTokV='SOL', fChainV='SOL', fBrandV='', brandView='', formPkg='', panel='menu', undoBuf=null;
 var mixAll=false, ratePrefill='', rateBusy=false, hidAt=0, autoLocked=false, costOf='spend', cliOpen='', teamOpen='';
 var syncBusy=false, syncMsg='', syncT=null, syncSaving=false;
+var authEmail='', authTyped='', authBusy=false;
 
 function clone(o){return JSON.parse(JSON.stringify(o));}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
@@ -1484,7 +1485,29 @@ function linkOpen(){
    the other device to be online to see it — the honest trade for never eating
    somebody's work. */
 function syncOn(){var c=S.sync||{};return !!(c.url&&c.token);}
-function syncCfg(){if(!S.sync)S.sync={url:'',token:'',ver:0,at:0};return S.sync;}
+/* Served from the server it syncs with, in every normal case — so the address
+   is already known and does not have to be typed on each new device. */
+function defSyncUrl(){
+ try{
+  if(location.protocol==='http:'||location.protocol==='https:')
+   return location.origin+'/sync';
+ }catch(e){}
+ return '';
+}
+function authUrl(what){
+ var u=String((S.sync&&S.sync.url)||$('#pSyncUrl')&&$('#pSyncUrl').value||'').trim().replace(/\/+$/,'');
+ return u?u+'/auth/'+what:'';
+}
+function authPost(what,body){
+ var u=authUrl(what);
+ if(!u)return Promise.resolve({code:0,body:{error:'Enter the server address first'}});
+ return fetch(u,{method:'POST',cache:'no-store',
+  headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+  .then(function(r){
+   return r.json()['catch'](function(){return{};}).then(function(j){return{code:r.status,body:j};});
+  })['catch'](function(e){return{code:0,body:{error:'Could not reach '+u}};});
+}
+function syncCfg(){if(!S.sync)S.sync={url:'',token:'',email:'',ver:0,at:0};return S.sync;}
 function syncSet(m){syncMsg=m;if($('#ovPanel').classList.contains('on')&&panel==='set')repaint();}
 function mergeTx(mine,theirs){
  var by={},out=[],i,t;
@@ -1549,7 +1572,7 @@ function syncNow(quiet,retry){
    throw new Error('Another device wrote first \u2014 try again');
   }
   if(r.code!==200)throw new Error('Server said '+r.code);
-  if(!S.sync)S.sync={url:'',token:'',ver:0,at:0};
+  if(!S.sync)S.sync={url:'',token:'',email:'',ver:0,at:0};
   S.sync.ver=num(r.body.version);S.sync.at=num(r.body.at);
   syncBusy=false;
   syncSaving=true;save();syncSaving=false;
@@ -2533,6 +2556,43 @@ function oneCliHtml(){
     '<span class="r"><b>'+usdc(num(t.usd)-fee)+'</b><div class="s">of '+usdc(num(t.usd))+'</div></span></div>';
   }).join('')+'</div>';
 }
+/* Signing in only fetches the token the sync has always used, so everything
+   below the login is the machinery that was already tested. On a new device
+   the whole point is that there is nothing to copy across by hand: type the
+   address, type six digits, and the history is there. */
+function syncSec(){
+ var c=S.sync||{},on=syncOn();
+ var note=syncMsg?esc(syncMsg)
+   :(on?(num(c.at)?'Last synced '+esc(relTime(num(c.at))):'Signed in \u2014 not synced yet')
+       :'Off \u2014 this device keeps its own copy');
+ var head='<div class="sec"><h3>Sign in \u00b7 sync across devices</h3>';
+ if(on)
+  return head+'<p class="tiny">Signed in'+(c.email?' as <b>'+esc(c.email)+'</b>':'')+
+   '. Every device signed in to the same address shares one book. Entries are merged by id, '+
+   'so nothing is lost to a device that was behind \u2014 but a deletion only spreads while '+
+   'the other device is online. Your access code is not part of what syncs.</p>'+
+   '<div class="wrapb"><button class="bs" data-sync="now">Sync now</button>'+
+   '<button class="bs" data-sync="out" style="color:var(--out)">Sign out</button></div>'+
+   '<p class="tiny" style="margin:10px 0 0">'+note+'</p></div>';
+
+ var sent=!!authEmail;
+ return head+
+  '<p class="tiny">Sign in and this device shows the same book as your others. '+
+  'Nothing is copied by hand \u2014 the history arrives on its own. '+
+  'It runs on your own server, and your access code never leaves this device.</p>'+
+  '<div class="fr"><label>Server address</label>'+
+   '<input id="pSyncUrl" autocomplete="off" inputmode="url" placeholder="https://cashfra.com/sync" value="'+esc(c.url||defSyncUrl())+'"></div>'+
+  (sent
+   ? '<div class="fr"><label>Code sent to '+esc(authEmail)+'</label>'+
+     '<input id="pAuthCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 digits"></div>'+
+     '<div class="wrapb"><button class="bs" data-auth="verify">Sign in</button>'+
+     '<button class="bs" data-auth="again">Send another</button>'+
+     '<button class="bs" data-auth="cancel">Use a different address</button></div>'
+   : '<div class="fr"><label>Email</label>'+
+     '<input id="pAuthMail" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" value="'+esc(authTyped)+'"></div>'+
+     '<div class="wrapb"><button class="bs" data-auth="start">Email me a code</button></div>')+
+  '<p class="tiny" style="margin:10px 0 0">'+note+'</p></div>';
+}
 function setHtml(){
  function pair(k,arr,p1,p2){
   return arr.map(function(r,i){
@@ -2572,17 +2632,7 @@ function setHtml(){
   pairT('wallets',S.wallets,'Chain','Address')+'</div>'+
   '<div class="sec"><h3>Invoice terms</h3>'+
   '<div class="fr"><textarea id="pInvNote" placeholder="e.g. Listing goes live within 24h of payment.">'+esc(S.invNote||'')+'</textarea></div></div>'+
-  '<div class="sec"><h3>Sync across devices</h3>'+
-  '<p class="tiny">Your phone, your laptop and the installed app each keep their own copy '+
-  'unless this is on. Entries are merged by id, so nothing is ever lost to a device that was '+
-  'behind \u2014 but a deletion only spreads while the other device is online. '+
-  'Runs on your own server; the access code never leaves this device.</p>'+
-  '<div class="fr"><label>Server address</label><input id="pSyncUrl" autocomplete="off" placeholder="https://cashfra.com/sync" value="'+esc((S.sync||{}).url||'')+'"></div>'+
-  '<div class="fr"><label>Token</label><input id="pSyncTok" autocomplete="off" placeholder="from vps-sync-setup.sh" value="'+esc((S.sync||{}).token||'')+'"></div>'+
-  '<div class="wrapb"><button class="bs" data-sync="now">Sync now</button></div>'+
-  '<p class="tiny" style="margin:10px 0 0">'+
-   (syncMsg?esc(syncMsg):(syncOn()?(num((S.sync||{}).at)?'Last synced '+esc(relTime(num(S.sync.at))):'Not synced yet'):'Off \u2014 this device keeps its own copy'))+
-   '</p></div>'+
+  syncSec()+
   '<div class="sec"><h3>Spending caps \u00b7 % of money in</h3>'+
   '<p class="tiny">A ceiling per category, checked against each period in Insights. Use the exact category name, e.g. Tip shiller or Team commission.</p>'+
   pair('caps',S.caps,'Category','%')+'</div>'+
@@ -2622,7 +2672,7 @@ function dataHtml(){
 
 /* global events */
 document.addEventListener('click',function(e){
- var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-seed],[data-mix],[data-cshare],[data-rate],[data-sync],[data-cli],[data-team],[data-tcopy],[data-lock]');
+ var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-seed],[data-mix],[data-cshare],[data-rate],[data-sync],[data-auth],[data-cli],[data-team],[data-tcopy],[data-lock]');
  if(!el)return;
  var d=el.dataset;
  if(d.lock!==undefined){
@@ -2645,8 +2695,56 @@ document.addEventListener('click',function(e){
  if(d.mix!==undefined){mixAll=(d.mix==='all');repaint();return;}
  if(d.cshare!==undefined){costOf=d.cshare;repaint();return;}
  if(d.sync!==undefined){
-  if(!syncOn()){toast('Add the server address and token first');return;}
+  if(d.sync==='out'){
+   toast('Sign out of sync on this device?','Sign out',function(){
+    /* the ledger stays; only the way back to the server goes */
+    S.sync={url:(S.sync||{}).url||'',token:'',email:'',ver:0,at:0};
+    authEmail='';authTyped='';syncMsg='';save();repaint();toast('Signed out on this device');
+   });
+   return;
+  }
+  if(!syncOn()){toast('Sign in first');return;}
   syncNow(false).then(function(okc){toast(okc?'Synced':(syncMsg||'Sync failed'));});
+  return;
+ }
+ if(d.auth!==undefined){
+  if(d.auth==='cancel'){authEmail='';syncMsg='';repaint();return;}
+  if(authBusy)return;
+  var url=($('#pSyncUrl')&&$('#pSyncUrl').value||'').trim();
+  if(!url){toast('Enter the server address first');return;}
+  if(!S.sync)S.sync={url:'',token:'',email:'',ver:0,at:0};
+  S.sync.url=url;save();
+
+  if(d.auth==='start'||d.auth==='again'){
+   var mail=(d.auth==='again')?authEmail:(($('#pAuthMail')&&$('#pAuthMail').value||'').trim());
+   if(!mail){toast('Enter your email');return;}
+   authTyped=mail;authBusy=true;syncSet('Sending a code\u2026');
+   authPost('start',{email:mail}).then(function(r){
+    authBusy=false;
+    if(r.code===200){authEmail=mail;syncSet('Code sent to '+mail+' \u2014 it lasts ten minutes');}
+    else syncSet(r.body&&r.body.error||('Server said '+r.code));
+    repaint();
+   });
+   return;
+  }
+  if(d.auth==='verify'){
+   var code=($('#pAuthCode')&&$('#pAuthCode').value||'').trim();
+   if(!/^\d{6}$/.test(code)){toast('Type the six digits from the email');return;}
+   authBusy=true;syncSet('Signing in\u2026');
+   authPost('verify',{email:authEmail,code:code}).then(function(r){
+    authBusy=false;
+    if(r.code!==200||!r.body.token){syncSet(r.body&&r.body.error||('Server said '+r.code));repaint();return;}
+    S.sync.token=r.body.token;S.sync.email=r.body.email||authEmail;
+    S.sync.ver=0;S.sync.at=0;      /* a fresh device knows nothing of the server yet */
+    authEmail='';authTyped='';save();
+    syncSet('Signed in \u2014 fetching your book\u2026');repaint();
+    syncNow(false).then(function(okc){
+     toast(okc?'Signed in \u00b7 your history is here':(syncMsg||'Signed in, but the sync failed'));
+     repaint();
+    });
+   });
+   return;
+  }
   return;
  }
  if(d.rate!==undefined){
@@ -2734,11 +2832,12 @@ document.addEventListener('input',function(e){
  if(e.target.id==='pIdr'){S.idr=num(e.target.value);save();render();return;}
  if(e.target.id==='pGoal'){S.goal=num(e.target.value);save();render();return;}
  if(e.target.id==='pInvNote'){S.invNote=e.target.value;save();return;}
- if(e.target.id==='pSyncUrl'||e.target.id==='pSyncTok'){
-  if(!S.sync)S.sync={url:'',token:'',ver:0,at:0};
-  S.sync[e.target.id==='pSyncUrl'?'url':'token']=e.target.value.trim();
+ if(e.target.id==='pSyncUrl'){
+  if(!S.sync)S.sync={url:'',token:'',email:'',ver:0,at:0};
+  S.sync.url=e.target.value.trim();
   syncMsg='';save();
  }
+ if(e.target.id==='pAuthMail'){authTyped=e.target.value;}
 });
 document.addEventListener('change',function(e){
  if(e.target.dataset.ct2!==undefined){repaint();return;}
