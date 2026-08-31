@@ -183,13 +183,14 @@ systemctl is-active --quiet cashfra-sync || {
 install -d -m 755 /etc/nginx/snippets
 cat > "$SNIP" <<CONF
 # Cashfra ledger sync — written by deploy/vps-sync-setup.sh
-location ^~ /sync {
+location = /sync {
     # a token must never cross the wire in the clear, and certbot leaves a
     # plain :80 block behind that this snippet is also included in
     if (\$scheme != "https") { return 301 https://\$host\$request_uri; }
-    # no trailing slash: the whole path goes through, and the service strips
-    # its own mount point, so /sync and /sync/auth/start both land right
-    proxy_pass http://127.0.0.1:$PORT;
+    # One exact address carries everything — reading, writing and signing in,
+    # which arrives as a POST. A prefix would also have to be routed right,
+    # and on at least one real server it was not.
+    proxy_pass http://127.0.0.1:$PORT/;
     proxy_set_header Host \$host;
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_read_timeout 30s;
@@ -218,7 +219,7 @@ JSON='Content-Type: application/json'
 
 # a token nobody was issued must be refused, and an address nobody allowed too
 badtok=$(code -H "X-Cashfra-Token: never_issued_aaaaaa" "https://$DOMAIN/sync")
-badmail=$(code -X POST -H "$JSON" -d '{"email":"nobody@example.invalid"}' "https://$DOMAIN/sync/auth/start")
+badmail=$(code -X POST -H "$JSON" -d '{"action":"auth.start","email":"nobody@example.invalid"}' "https://$DOMAIN/sync")
 say "an unknown token"  "$badtok$([ "$badtok" = 401 ] && echo '  refused, ok' || echo '  expected 401')"
 say "an unknown address" "$badmail$([ "$badmail" = 403 ] && echo '  refused, ok' || echo '  expected 403')"
 
@@ -229,7 +230,7 @@ if [ "$badtok" != 401 ] || [ "$badmail" != 403 ]; then
   echo
   echo "    Straight at the service, bypassing nginx (expect 401 then 403):"
   d1=$(code -H "X-Cashfra-Token: never_issued_aaaaaa" "http://127.0.0.1:$PORT/")
-  d2=$(code -X POST -H "$JSON" -d '{"email":"nobody@example.invalid"}' "http://127.0.0.1:$PORT/auth/start")
+  d2=$(code -X POST -H "$JSON" -d '{"action":"auth.start","email":"nobody@example.invalid"}' "http://127.0.0.1:$PORT/")
   say "  direct, token"   "$d1"
   say "  direct, address" "$d2"
   echo

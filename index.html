@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-08-31-10">
+<meta name="cashfra-build" content="2026-08-31-11">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -1494,13 +1494,14 @@ function defSyncUrl(){
  }catch(e){}
  return '';
 }
-function authUrl(what){
- var u=String((S.sync&&S.sync.url)||$('#pSyncUrl')&&$('#pSyncUrl').value||'').trim().replace(/\/+$/,'');
- return u?u+'/auth/'+what:'';
-}
+/* Signing in goes to the ledger's own address as a POST, not to a sub-path.
+   A sub-path only works if nginx was told to route the whole prefix, and on a
+   server where it was not, /sync answered while /sync/auth/start did not.
+   One address that is known to work beats two that depend on a config file. */
 function authPost(what,body){
- var u=authUrl(what);
+ var u=String((S.sync&&S.sync.url)||($('#pSyncUrl')&&$('#pSyncUrl').value)||'').trim().replace(/\/+$/,'');
  if(!u)return Promise.resolve({code:0,body:{error:'Enter the server address first'}});
+ body=Object.keys(body).reduce(function(o,k){o[k]=body[k];return o;},{action:'auth.'+what});
  return fetch(u,{method:'POST',cache:'no-store',
   headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
   .then(function(r){

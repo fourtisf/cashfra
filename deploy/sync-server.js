@@ -232,8 +232,9 @@ function rotate(email) {
 }
 if (process.argv[2] === '--rotate') { rotate(process.argv[3]); process.exit(0); }
 
-function authStart(req, res) {
-  readJson(req, res, j => {
+function authStart(req, res) { readJson(req, res, j => startWith(j, res)); }
+function startWith(j, res) {
+  {
     const email = norm(j && j.email);
     if (!okEmail(email)) return send(res, 400, { error: 'That does not look like an email address' });
     /* Say plainly that an address is not allowed. This is one person's private
@@ -261,11 +262,12 @@ function authStart(req, res) {
       'sign-in screen. Nothing has happened, and nothing will without this code.')
       .then(() => send(res, 200, { ok: true, sent: MAIL === 'file' ? 'file' : MAIL }))
       .catch(() => send(res, 502, { error: 'The server could not send the email. Check its mail settings.' }));
-  });
+  }
 }
 
-function authVerify(req, res) {
-  readJson(req, res, j => {
+function authVerify(req, res) { readJson(req, res, j => verifyWith(j, res)); }
+function verifyWith(j, res) {
+  {
     const email = norm(j && j.email), code = String((j && j.code) || '').trim();
     if (!okEmail(email) || !/^\d{6}$/.test(code))
       return send(res, 400, { error: 'Enter the six digits from the email' });
@@ -287,11 +289,22 @@ function authVerify(req, res) {
     try { fs.unlinkSync(p); } catch (e) {}
     const acc = accountFor(email);
     send(res, 200, { token: acc.token, email: acc.email });
-  });
+  }
 }
 
 /* ── the ledger itself, unchanged ──────────────────────────────────────────*/
+/* Signing in also answers on the ledger's own address, as a POST carrying an
+   action. Sub-paths depend on how nginx was told to route, and on ALFA's box
+   /sync reached the service while /sync/auth/start did not — nginx answered
+   405, which is what a static handler says to a POST. One address that is
+   known to work beats two that depend on a config nobody can see. */
 function ledger(req, res) {
+  if (req.method === 'POST') return readJson(req, res, j => {
+    const a = String((j && j.action) || '').replace('.', '/');
+    if (a === 'auth/start') return startWith(j, res);
+    if (a === 'auth/verify') return verifyWith(j, res);
+    return send(res, 400, { error: 'unknown action' });
+  });
   const token = clean(req.headers['x-cashfra-token']);
   if (!token) return send(res, 401, { error: 'bad token' });
   /* the token must already exist — signing in is the only thing that makes one */

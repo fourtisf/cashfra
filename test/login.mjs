@@ -81,8 +81,12 @@ const server = spawn('node', ['deploy/sync-server.js'], {
 
 const web = httpServer((req, res) => {
   const url = new URL(req.url, WEB);
-  if (url.pathname === '/sync' || url.pathname.startsWith('/sync/')) {
-    const p = httpRequest({ host: '127.0.0.1', port: SYNC_PORT, path: url.pathname,
+  /* Deliberately routed the way ALFA's server actually is: an EXACT match on
+     /sync and nothing under it. There, /sync/auth/start fell through to the
+     static handler, which answers a POST with 405. Signing in has to work on
+     this shape, so this is the shape the app is tested against. */
+  if (url.pathname === '/sync') {
+    const p = httpRequest({ host: '127.0.0.1', port: SYNC_PORT, path: '/',
                             method: req.method, headers: req.headers }, up => {
       res.writeHead(up.statusCode, up.headers); up.pipe(res);
     });
@@ -118,7 +122,15 @@ const codeFor = () => {                      // read the "inbox"
   const m = txt.match(/\b(\d{6})\b/);
   return m && m[1];
 };
-const api = (path, body) => fetch(`${WEB}sync${path}`, {
+/* the shape the app uses: a POST to the ledger's own address, action in the
+   body — the sub-path form is checked separately below */
+const api = (path, body) => fetch(SYNC, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(Object.assign({ action: 'auth' + path.replace(/\//g, '.').replace('.auth', '') }, body))
+}).then(async r => ({ code: r.status, body: await r.json().catch(() => ({})) }));
+/* straight at the service: the fake nginx above will not carry a sub-path,
+   which is the whole point of it */
+const apiPath = (path, body) => fetch(`http://127.0.0.1:${SYNC_PORT}${path}`, {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
 }).then(async r => ({ code: r.status, body: await r.json().catch(() => ({})) }));
 
@@ -151,6 +163,21 @@ check(r.code === 401, 'the same code cannot be used twice');
 await api('/auth/start', { email: MINE });
 r = await api('/auth/verify', { email: MINE, code: codeFor() });
 check(r.body.token === token, 'signing in again returns the same account, not a new one');
+
+/* both shapes have to work: the app uses the POST, but a server routed with a
+   prefix keeps the sub-paths, and one already deployed that way must not break */
+const blocked = await fetch(`${WEB}sync/auth/start`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email: THEIRS })
+}).then(x => x.status).catch(() => 0);
+check(blocked !== 403, `the sub-path really is unreachable through this nginx (${blocked})`);
+r = await apiPath('/auth/start', { email: THEIRS });
+check(r.code === 403, 'the service still answers it directly, for a server routed by prefix');
+r = await api('/auth/start', { email: 'x@y' });
+check(r.code === 400, 'and the POST form validates the same way');
+r = await fetch(SYNC, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'nonsense' }) });
+check(r.status === 400, 'an action the server does not know is refused, not guessed at');
 
 const guess = await fetch(SYNC, { headers: { 'X-Cashfra-Token': 'never_issued_aaaaaa' } });
 check(guess.status === 401, `a token that was never issued is still refused (${guess.status})`);

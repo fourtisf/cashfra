@@ -137,8 +137,13 @@ finished setup, and the script says so loudly.
 
 It creates a `cashfra` system user, a systemd unit for `deploy/sync-server.js`
 on a free loopback port (it walks 8787-8799 — the first version assumed 8787
-was free and died on a box where it was not), and an nginx `location ^~ /sync`
-in front of it. Then it checks the two refusals that matter: an unknown token
+was free and died on a box where it was not), and an nginx `location = /sync`
+in front of it. One exact address carries everything: reading, writing, and
+signing in, which arrives as a POST with the action in the body. An earlier
+version put signing in under `/sync/auth/…` and it did not route on a real
+server — nginx answered 405, which is what a static handler says to a POST.
+The service still answers the sub-paths for anyone whose nginx does route a
+prefix, but nothing depends on it. Then it checks the two refusals that matter: an unknown token
 gets 401, an unknown address 403. If either is wrong it stops, retries both
 against `127.0.0.1` to say whether the fault is nginx or the service, and does
 **not** print sign-in instructions — a check that failed must not read as
@@ -276,7 +281,7 @@ Opening `index.html` over `file://` still works — the app falls back to
 
 ## Tests
 
-Ten Playwright suites, 279 checks. They are for this repo only and never ship
+Ten Playwright suites, 283 checks. They are for this repo only and never ship
 to the server. The price feed is always stubbed, so the suites are hermetic.
 
 ```sh
@@ -379,7 +384,10 @@ against the fixed code, then re-run with the fix removed: an assertion nobody
 has watched fail is not yet a test, and the first version of the race check
 passed either way.
 
-`login.mjs` (29 checks) covers signing in. The server's own rules first: an
+`login.mjs` (33 checks) covers signing in. Its stand-in for nginx is routed
+the way ALFA's server actually is — an exact match on `/sync`, nothing under
+it — so the suite would have caught the sub-path failure instead of his phone
+doing it. The server's own rules first: an
 address nobody allow-listed is turned away and no mail leaves, a wrong code is
 refused and says how many tries remain, a right one hands back a token, the
 same code cannot be used twice, and signing in again lands on the *same*
