@@ -6,6 +6,8 @@
 #     sudo bash deploy/vps-sync-setup.sh [domain] [token]
 #
 # domain defaults to cashfra.com; leave the token out and one is generated.
+# The port is picked from what is actually free — this box runs other things
+# too — or set PORT=8790 in front of the command to name one yourself.
 # Run deploy/vps-setup.sh first — this script edits the nginx site that one
 # installs.
 set -euo pipefail
@@ -17,7 +19,7 @@ DATA=/var/lib/cashfra
 LIB=/usr/local/lib/cashfra
 SITE=/etc/nginx/sites-available/cashfra
 SNIP=/etc/nginx/snippets/cashfra-sync.conf
-PORT=8787
+UNIT=/etc/systemd/system/cashfra-sync.service
 
 [ "$(id -u)" = 0 ] || { echo "run this with sudo" >&2; exit 1; }
 [ -f "$SRC/deploy/sync-server.js" ] || { echo "$SRC/deploy/sync-server.js is missing" >&2; exit 1; }
@@ -29,6 +31,52 @@ if ! command -v node >/dev/null; then
   apt-get update -qq && apt-get install -y -qq nodejs >/dev/null
 fi
 command -v node >/dev/null || { echo "node is still missing — install it and re-run" >&2; exit 1; }
+
+# ── a port that is actually free ────────────────────────────────────────────
+# The first run of this script assumed 8787 was ours to take. On a box that
+# also runs PM2 and a code server it was not, and the service died on start
+# with EADDRINUSE — so ask first, the way vps-setup.sh asks about port 80.
+# Ask by binding it, exactly as the service will. Reading `ss` would be neater
+# but it is not on every box, and a check that quietly answers "free" when the
+# tool is missing is worse than no check at all — it repeats the same failure.
+inuse(){
+  node -e '
+    var s=require("net").createServer();
+    s.once("error",function(){process.exit(0);});                 /* taken */
+    s.once("listening",function(){s.close(function(){process.exit(1);});});
+    s.listen(+process.argv[1],"127.0.0.1");
+  ' "$1"
+}
+holder(){
+  command -v ss >/dev/null || { echo "another program"; return; }
+  ss -tlnp 2>/dev/null | awk -v p=":$1\$" 'NR>1 && $4 ~ p {print $NF; exit}' | grep . || echo "another program"
+}
+
+# Our own service holds the port on a re-run, and that is not a conflict — so
+# stand it down while we look. If this script then bails for any reason, put
+# back what was running: a failed re-run must not leave sync switched off.
+WAS_ACTIVE=0
+systemctl is-active --quiet cashfra-sync 2>/dev/null && WAS_ACTIVE=1 || true
+restore(){ [ "$WAS_ACTIVE" = 1 ] && systemctl start cashfra-sync 2>/dev/null || true; }
+trap restore EXIT
+systemctl stop cashfra-sync 2>/dev/null || true
+WANT=${PORT:-}
+if [ -z "$WANT" ] && [ -f "$UNIT" ]; then
+  WANT=$(sed -n 's/^Environment=PORT=\([0-9]\+\)$/\1/p' "$UNIT" | head -1)
+fi
+if [ -n "$WANT" ] && inuse "$WANT"; then
+  echo "!!  port $WANT is taken by $(holder "$WANT")"
+  [ -n "${PORT:-}" ] && { echo "    You asked for that one, so nothing was changed." >&2; exit 1; }
+  WANT=''
+fi
+if [ -z "$WANT" ]; then
+  for p in $(seq 8787 8799); do
+    if ! inuse "$p"; then WANT=$p; break; fi
+  done
+fi
+[ -n "$WANT" ] || { echo "no free port between 8787 and 8799 — pass one: PORT=9123 sudo -E bash $0" >&2; exit 1; }
+PORT=$WANT
+echo "==> sync will listen on 127.0.0.1:$PORT"
 
 # ── the service runs as its own user and can read nothing else ──────────────
 id cashfra >/dev/null 2>&1 || useradd --system --home "$DATA" --shell /usr/sbin/nologin cashfra
@@ -55,7 +103,7 @@ if [ ! -f "$DATA/$TOKEN.json" ]; then
 fi
 
 # ── systemd ─────────────────────────────────────────────────────────────────
-cat > /etc/systemd/system/cashfra-sync.service <<UNIT
+cat > "$UNIT" <<UNIT
 [Unit]
 Description=Cashfra ledger sync
 After=network.target
@@ -84,8 +132,14 @@ systemctl daemon-reload
 systemctl enable --now cashfra-sync >/dev/null 2>&1 || systemctl enable cashfra-sync >/dev/null
 systemctl restart cashfra-sync
 sleep 1
+trap - EXIT          # the new unit is up; the old one is not coming back
 systemctl is-active --quiet cashfra-sync || {
-  echo "!!  the sync service did not start:"; journalctl -u cashfra-sync -n 20 --no-pager; exit 1; }
+  echo "!!  the sync service did not start:"; journalctl -u cashfra-sync -n 20 --no-pager
+  echo
+  echo "    If that says EADDRINUSE, something else grabbed port $PORT between"
+  echo "    the check above and now. Name a different one and run it again:"
+  echo "      PORT=9123 sudo -E bash $0"
+  exit 1; }
 
 # ── nginx: one exact location, ahead of every deny rule in the site ────────
 install -d -m 755 /etc/nginx/snippets
@@ -105,7 +159,7 @@ location = /sync {
 }
 CONF
 if grep -q 'cashfra-sync.conf' "$SITE"; then
-  echo "==> nginx already routes /sync"
+  echo "==> nginx already routes /sync to 127.0.0.1:$PORT"
 else
   echo "==> adding /sync to the nginx site"
   cp "$SITE" "$SITE.bak.$(date +%s)"
