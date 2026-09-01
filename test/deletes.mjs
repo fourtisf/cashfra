@@ -17,21 +17,23 @@ import { readFileSync } from 'fs';
 const SRC = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
 /* pull one top-level `function name(...){...}` out of the app, braces matched */
-function lift(name) {
+function span(name) {
   const at = SRC.indexOf('function ' + name + '(');
   if (at < 0) throw new Error('index.html no longer defines ' + name + '()');
-  let i = SRC.indexOf('{', at), depth = 0;
-  for (let j = i; j < SRC.length; j++) {
+  let depth = 0;
+  for (let j = SRC.indexOf('{', at); j < SRC.length; j++) {
     if (SRC[j] === '{') depth++;
-    else if (SRC[j] === '}' && --depth === 0) return SRC.slice(at, j + 1);
+    else if (SRC[j] === '}' && --depth === 0) return [at, j + 1];
   }
   throw new Error('unterminated ' + name + '()');
 }
+const lift = name => SRC.slice(...span(name));
+const lineAt = i => SRC.slice(0, i).split('\n').length;
 const TTL = /var DEL_TTL=([^;]+);/.exec(SRC);
 if (!TTL) throw new Error('index.html no longer defines DEL_TTL');
 
-const NAMES = ['num', 'delMap', 'tombIds', 'untombIds', 'isGone',
-               'mergeDel', 'pruneDel', 'applyDel', 'txSig', 'mergeTx'];
+const NAMES = ['num', 'delMap', 'tombIds', 'untombIds', 'isGone', 'mergeDel',
+               'pruneDel', 'applyDel', 'rmTx', 'txIds', 'txSig', 'mergeTx'];
 const app = new Function('S', `
   var DEL_TTL=${TTL[1]};
   ${NAMES.map(lift).join('\n')}
@@ -144,6 +146,57 @@ const entry = (party, mt, extra) => Object.assign(
   const A = app({ del: [] });
   A.delMap();
   check(!Array.isArray(A.S.del) && typeof A.S.del === 'object', 'a malformed S.del is repaired, not trusted');
+}
+
+// ── one door out of the book ──────────────────────────────────────────────
+/* The fix above is only worth anything while every removal uses it. Two were
+   missed the first time — undoing a one-tap recurring log, and the one-time
+   sweep of an old build's sample data — and each looked perfectly correct on
+   the device it ran on. So this does not test behaviour, it reads the source:
+   the only code allowed to take entries out of S.tx is rmTx (which leaves the
+   tombstone) and applyDel (which acts on tombstones already made). A new
+   removal written any other way fails here, with the line to go and look at. */
+{
+  const A = app({});
+  A.S.tx = [entry('Bebe', T), entry('lgbweeed', T)];
+  A.rmTx('Bebe');
+  check(parties(A.S.tx) === 'lgbweeed' && A.S.del.Bebe > 0,
+        'rmTx takes the entry out and leaves the tombstone in one move');
+  A.S.tx = [entry('a', T), entry('b', T), entry('c', T)];
+  A.rmTx(['a', 'c']);
+  check(parties(A.S.tx) === 'b' && A.S.del.a > 0 && A.S.del.c > 0, 'and does the same for a list');
+
+  const doors = ['rmTx', 'applyDel'].map(span);
+  const inside = i => doors.some(([a, b]) => i >= a && i < b);
+  const scan = /S\.tx\s*=\s*S\.tx\.filter\(|S\.tx\s*=\s*\[\s*\]|S\.tx\.splice\([^,)]+,\s*(?!0\b)\d/g;
+  const strays = [];
+  for (let m; (m = scan.exec(SRC));)
+    if (!inside(m.index)) strays.push(`index.html:${lineAt(m.index)} ${m[0].trim()}`);
+  check(strays.length === 0,
+        strays.length ? `entries are removed without a tombstone — call rmTx() instead:\n          ${strays.join('\n          ')}`
+                      : 'nothing else in the app takes entries out of the book behind rmTx\u2019s back');
+}
+
+// ── the merge is never asked to forget the tombstones ─────────────────────
+/* mergeTx still works with two arguments — it is a plain union again, which
+   is precisely the old bug. Nothing may call it that way. */
+{
+  const [defAt, defEnd] = span('mergeTx');
+  const calls = [];
+  for (let m, re = /mergeTx\(/g; (m = re.exec(SRC));) {
+    if (m.index >= defAt && m.index < defEnd) continue;         // the definition itself
+    let depth = 0, args = 1, j = m.index + 'mergeTx('.length - 1;
+    for (; j < SRC.length; j++) {
+      const c = SRC[j];
+      if (c === '(' ) depth++;
+      else if (c === ')') { if (--depth === 0) break; }
+      else if (c === ',' && depth === 1) args++;
+    }
+    if (args < 3) calls.push(`index.html:${lineAt(m.index)}`);
+  }
+  check(calls.length === 0,
+        calls.length ? `mergeTx() called without the tombstones, which makes it a plain union again: ${calls.join(', ')}`
+                     : 'every merge is handed the tombstones \u2014 none of them is a plain union');
 }
 
 console.log(ok.map(s => '  PASS  ' + s).join('\n'));

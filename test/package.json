@@ -2,13 +2,19 @@
   "name": "cashfra-tests",
   "private": true,
   "type": "module",
-  "description": "Browser checks for the deployed app. Not part of the app \u2014 the app itself has no dependencies.",
+  "description": "Checks for the deployed app. Not part of the app — the app itself has no dependencies. deletes.mjs needs nothing at all; the rest need Playwright.",
   "scripts": {
+    "test": "cd .. && ./run-tests.sh",
+    "deletes": "node deletes.mjs",
     "smoke": "node smoke.mjs",
     "rates": "node rates.mjs",
     "features": "node features.mjs",
     "analytics": "node analytics.mjs",
     "landing": "node landing.mjs",
+    "rules": "node rules.mjs",
+    "brands": "node brands.mjs",
+    "sync": "node sync.mjs",
+    "code-login": "node code-login.mjs",
     "deploy": "node update.mjs"
   },
   "devDependencies": {

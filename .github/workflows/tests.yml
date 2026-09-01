@@ -1,0 +1,34 @@
+name: tests
+
+# The delete bug shipped because nothing ran the tests. This does, on every
+# push and every pull request.
+on:
+  push:
+  pull_request:
+
+jobs:
+  # Seconds, no install, no browser. It holds the rules that keep the ledger
+  # honest — above all that an entry ALFA deleted stays deleted — so it is
+  # worth knowing about a break here before the slow job has finished booting.
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node test/deletes.mjs
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: install Playwright
+        working-directory: test
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - run: ./run-tests.sh

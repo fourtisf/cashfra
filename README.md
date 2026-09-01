@@ -268,7 +268,21 @@ Ten Playwright suites, 287 checks, and one that needs no browser at all. They ar
 to the server. The price feed is always stubbed, so the suites are hermetic.
 
 ```sh
-cd test && npm install && cd ..
+./run-tests.sh                          # all of it, start to finish
+```
+
+`run-tests.sh` runs the dependency-free suite first, then starts and tears down
+the dev server for the browser ones. It prints each suite's total and only the
+failures. Exit 0 means every check passed. Without Playwright installed it runs
+what it can and says plainly which suites it skipped, rather than quietly not
+running them. `.github/workflows/tests.yml` runs the same thing on every push.
+
+To run one suite on its own:
+
+```sh
+node test/deletes.mjs                   # no browser, no server, no npm
+
+cd test && npm install && npx playwright install chromium && cd ..
 
 python3 dev-server.py 8123 &            # the last two bring their own server
 BASE=http://127.0.0.1:8123/ node test/smoke.mjs
@@ -282,8 +296,6 @@ BASE=http://127.0.0.1:8123/ node test/brands.mjs
 node test/update.mjs                    # starts and tears down its own server
 node test/sync.mjs                      # and its own sync service
 node test/code-login.mjs                # ...and a book keyed by 162007
-
-node test/deletes.mjs                   # no browser, no server, no dependencies
 ```
 
 `smoke.mjs` (52 checks) walks the handoff's regression list on a Pixel viewport:
@@ -358,7 +370,7 @@ with them — then copies it as text he can send them.
 `update.mjs` (7 checks) ships a second build mid-run and verifies the handover
 described under *Redeploying*.
 
-`deletes.mjs` (15 checks) is the odd one out: it lifts the merge functions
+`deletes.mjs` (19 checks) is the odd one out: it lifts the merge functions
 straight out of `index.html` and runs them in plain node, no browser and no
 dependencies, so `node test/deletes.mjs` is always available. It guards the one
 thing a union merge cannot express on its own — that an entry ALFA deleted
@@ -366,6 +378,17 @@ stays deleted — along with everything that has to keep working around it: the
 union still loses nobody's entry, an entry edited *after* a delete survives it,
 an entry with no `mt` at all (sample data, anything from an older build) is
 still deleted, and Undo outranks a tombstone the server already holds.
+
+Its last two checks read the source rather than running it. Every removal has to
+go through `rmTx()`, which takes the entry out and writes the tombstone in one
+move; anything else that writes `S.tx` directly fails the suite with the line to
+go and look at. The same for `mergeTx()`: called with two arguments it is a
+plain union again, which is the original bug, so nothing may call it that way.
+Two of the removal paths *were* missed on the first pass at this — undoing a
+one-tap recurring log, and the one-time sweep of an old build's sample data —
+and both looked entirely correct on the device they ran on. That is why the
+guard reads the source: this is a mistake that testing behaviour does not catch
+until it is on ALFA's phone.
 
 `sync.mjs` (28 checks) runs two browser contexts as two devices against a real
 `sync-server.js` on a throwaway data directory, behind a thirty-line stand-in

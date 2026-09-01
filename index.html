@@ -858,7 +858,7 @@ function load(){
       device — otherwise sample data loaded on purpose would vanish on the
       next launch. */
    if(S.seedFix!=='1'){
-    if(S.demo===true&&S.tx.length){S.tx=[];S.demo=false;}
+    if(S.demo===true&&S.tx.length){rmTx(txIds());S.demo=false;}
     S.seedFix='1';
    }
    save();
@@ -976,7 +976,12 @@ function perNoun(){return per==='m'?'month':'week';}
 function prevShort(){if(per==='m'){var s=perRange(-1)[0];return MOS[s.getMonth()];}return'last week';}
 function step(d){
  if(per==='m')anchor=new Date(anchor.getFullYear(),anchor.getMonth()+d,1);
- else{var w=weekStart(anchor);anchor=new Date(w.getFullYear(),w.getMonth(),w.getDate()+d*7);}
+ /* whole weeks from where the anchor already is, not from the Monday it sits
+    in: weekStart(x+7) is weekStart(x)+7 either way, so the week on screen is
+    the same — but snapping first threw away the day, and ‹ then › left the
+    anchor on the Monday. In a week that straddles two months that is a
+    different month, and switching back to M then showed the wrong one. */
+ else anchor=new Date(anchor.getFullYear(),anchor.getMonth(),anchor.getDate()+d*7);
  render();
 }
 function totals(L){
@@ -1272,7 +1277,7 @@ function logRecur(){
  });
  S.demo=false;save();render();
  toast(m.length+(m.length===1?' expense logged':' expenses logged'),'Undo',function(){
-  S.tx=S.tx.filter(function(x){return ids.indexOf(x.id)<0;});save();render();
+  rmTx(ids);save();render();
  });
 }
 
@@ -1612,6 +1617,20 @@ function pruneDel(){
  for(k in d)if(Object.prototype.hasOwnProperty.call(d,k)&&num(d[k])<cut){delete d[k];n++;}
  return n;
 }
+/* THE ONLY WAY AN ENTRY LEAVES THE BOOK.
+   Every removal — Delete, Delete all entries, undoing a recurring-cost log,
+   undoing Load sample data, the one-time sample sweep — goes through here, so
+   none of them can remove an entry and forget to say that it is gone. One that
+   forgets looks fixed on the device it was done on and comes back on the next
+   sync, which is exactly the bug this whole mechanism exists to end.
+   test/deletes.mjs fails the build if a new removal path appears that writes
+   S.tx directly instead of calling this. */
+function rmTx(ids){
+ var list=Array.isArray(ids)?ids:[ids],gone={};
+ list.forEach(function(id){gone[id]=1;});
+ tombIds(list);
+ S.tx=S.tx.filter(function(t){return !gone[t.id];});
+}
 /* Drop anything a tombstone has outlived — used after a merge, and once on
    load, so a blob written by a build that did not know about tombstones is
    tidied up on the way in rather than reappearing. */
@@ -1624,6 +1643,7 @@ function applyDel(){
    merge sorts, the local copy may not, and a signature that noticed the sort
    would report a change on every quiet sync and repaint the screen under
    ALFA's thumb every four seconds. */
+function txIds(){return S.tx.map(function(t){return t.id;});}
 function txSig(a){return a.map(function(t){return t.id+':'+num(t.mt);}).sort().join(',');}
 function mergeTx(mine,theirs,gone){
  var by={},out=[],i,t;
@@ -1971,7 +1991,7 @@ function del(id){
  var i=-1;S.tx.forEach(function(t,x){if(t.id===id)i=x;});
  if(i<0)return;
  undoBuf={t:S.tx[i],i:i};
- S.tx.splice(i,1);tombIds(id);save();render();
+ rmTx(id);save();render();
  toast('Entry deleted','Undo',function(){
   if(!undoBuf)return;
   untombIds(undoBuf.t.id,undoBuf.t);
@@ -2889,8 +2909,8 @@ document.addEventListener('click',function(e){
  }
  if(d.wipe!==undefined){
   if(!S.tx.length){toast('Already empty');return;}
-  var bak=S.tx.slice(),bakIds=bak.map(function(t){return t.id;});
-  S.tx=[];S.demo=false;tombIds(bakIds);save();render();
+  var bak=S.tx.slice(),bakIds=txIds();
+  rmTx(bakIds);S.demo=false;save();render();
   if($('#ovPanel').classList.contains('on'))repaint();
   toast('All entries deleted','Undo',function(){
    untombIds(bakIds,bak);
@@ -2924,8 +2944,7 @@ document.addEventListener('click',function(e){
   if(S.tx.length){toast('Clear the ledger first');return;}
   seed();save();fillStatic();render();repaint();
   toast(S.tx.length+' sample entries loaded','Undo',function(){
-   tombIds(S.tx.map(function(t){return t.id;}));
-   S.tx=[];S.demo=false;save();render();repaint();
+   rmTx(txIds());S.demo=false;save();render();repaint();
   });
   return;
  }

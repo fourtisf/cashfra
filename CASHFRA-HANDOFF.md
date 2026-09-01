@@ -100,6 +100,13 @@ PIN gate (setup/lock/change/forgot, auto-lock on leaving with a grace period) ·
 
 If you refactor, walk this list on mobile viewport before shipping.
 
+## Running the tests
+
+`./run-tests.sh` runs everything and exits non-zero if anything failed;
+`.github/workflows/tests.yml` runs it on every push. `node test/deletes.mjs`
+needs no browser, no server and no npm, so it runs anywhere — including on the
+VPS before a deploy. Nothing here ships to the server.
+
 ## Known limitations (by design — do not "fix" without asking ALFA)
 
 - claude.ai storage and standalone localStorage are **separate stores**; migration is manual via Backup/Restore JSON.
@@ -126,7 +133,7 @@ If you refactor, walk this list on mobile viewport before shipping.
 - Sync is **off unless switched on**, and single-device is still the supported default. When it is on it talks to ALFA's own VPS (`deploy/sync-server.js`, ~90 lines, one opaque JSON blob per token) and nowhere else. There are still no accounts: a token names a file that must already exist, and the service never creates one.
 - A refused write (409) **merges and retries once, inside the same exchange**. Do not "simplify" that into an error message: the next automatic attempt only comes after the next edit, so a device that gives up sits on its entry, out of step, with nothing on screen to say so.
 - The merge is a **union by entry id**, later `mt` winning a clash — plus **tombstones**, so that union can also carry a delete. A delete records `S.del[id] = Date.now()`, the map travels in the same blob as the entries, and the merge drops an entry whose tombstone is newer than the entry's own `mt`. An entry genuinely edited *after* the delete therefore still wins, so the reason the merge never deleted — losing an edit is recoverable, losing an entry is not — is kept, without the delete undoing itself. Tombstones merge as a union taking the later time, and are forgotten after `DEL_TTL` (180 days); a device offline for longer than that comes back and re-seeds what it still holds. `test/deletes.mjs` and `test/sync.mjs` hold both halves.
-  Undo, *Delete all entries* and undoing *Load sample data* all go through the same map, and an undo restamps `mt` so it outranks a tombstone the server may already have. A **restore from JSON** re-asserts what the file contains, for the same reason.
+  **`rmTx(ids)` is the only way an entry may leave the book** — it removes and tombstones in one move. Delete, *Delete all entries*, undoing a one-tap recurring log, undoing *Load sample data* and the one-time sample sweep all go through it. Writing `S.tx` directly to drop entries fails `test/deletes.mjs`, which reads the source for exactly this: two of those paths were missed when tombstones were first added, and each looked perfectly correct on the device it ran on. An undo restamps `mt` so it outranks a tombstone the server may already have, and a **restore from JSON** re-asserts what the file contains for the same reason.
 - The access code is stripped from everything sent (`lockHash`, `lockSalt`, and the `sync` block itself). Each device keeps its own code, so a synced device is not an unlocked one.
 - `sw.js` must keep skipping any request carrying `X-Cashfra-Token`. Cache the sync exchange and the app reads a stale version number, every write after it is refused, and even a `401` replays as a `200`.
 
