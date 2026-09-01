@@ -264,7 +264,7 @@ Opening `index.html` over `file://` still works — the app falls back to
 
 ## Tests
 
-Ten Playwright suites, 280 checks. They are for this repo only and never ship
+Ten Playwright suites, 287 checks, and one that needs no browser at all. They are for this repo only and never ship
 to the server. The price feed is always stubbed, so the suites are hermetic.
 
 ```sh
@@ -282,6 +282,8 @@ BASE=http://127.0.0.1:8123/ node test/brands.mjs
 node test/update.mjs                    # starts and tears down its own server
 node test/sync.mjs                      # and its own sync service
 node test/code-login.mjs                # ...and a book keyed by 162007
+
+node test/deletes.mjs                   # no browser, no server, no dependencies
 ```
 
 `smoke.mjs` (52 checks) walks the handoff's regression list on a Pixel viewport:
@@ -356,13 +358,23 @@ with them — then copies it as text he can send them.
 `update.mjs` (7 checks) ships a second build mid-run and verifies the handover
 described under *Redeploying*.
 
-`sync.mjs` (21 checks) runs two browser contexts as two devices against a real
+`deletes.mjs` (15 checks) is the odd one out: it lifts the merge functions
+straight out of `index.html` and runs them in plain node, no browser and no
+dependencies, so `node test/deletes.mjs` is always available. It guards the one
+thing a union merge cannot express on its own — that an entry ALFA deleted
+stays deleted — along with everything that has to keep working around it: the
+union still loses nobody's entry, an entry edited *after* a delete survives it,
+an entry with no `mt` at all (sample data, anything from an older build) is
+still deleted, and Undo outranks a tombstone the server already holds.
+
+`sync.mjs` (28 checks) runs two browser contexts as two devices against a real
 `sync-server.js` on a throwaway data directory, behind a thirty-line stand-in
 for nginx so the app and `/sync` share one origin under a live service worker —
 the production topology, and the only arrangement in which the worker can be
 caught caching the exchange. It checks that typing the access code is the
 whole of joining, that a device pushes on its own, that a second device pulls the whole
-ledger, that neither device's entries are lost to the other's merge, that two
+ledger, that neither device's entries are lost to the other's merge, that a
+delete travels instead of being handed back by the next pull, that two
 syncs back to back both land, that the access code and the token never reach
 the server, and that an unknown token gets a 401.
 

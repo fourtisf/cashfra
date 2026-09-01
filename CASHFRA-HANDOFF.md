@@ -47,6 +47,7 @@ S = {
   seedFix:'1',                             // marker: the one-time sample-data sweep has run
   lockIdle:300,                            // seconds away before the code is asked again; -1 = never
   contacts:{ '$SOLCAT':'@handle' },        // keyed by client name, beside the ledger
+  del:{ 'id':1725000000000 },              // tombstones: when each deleted entry was deleted
   wallets:[['SOL','addr'],...], invNote:'',// invoice: where they pay, and the terms line
   per:'m'|'w', last:{tok,ch}, lastB, demo, recSkip,
   lockHash, lockSalt, lockLen, lockNum, lockPreset               // access code
@@ -57,7 +58,8 @@ Entry = {
   amt, tok, rate, usd,                    // usd = amt*rate, LOCKED at entry time
   status:'paid'|'dp'|'unpaid', paid,      // income only; paid = USD received so far
   coms:[{to, pct, usd, paid:bool}],       // commission, multiple recipients; pct is source of truth
-  link, hash, note, recur:bool
+  link, hash, note, recur:bool,
+  mt                                      // last edited, ms — decides merges, never shown
 }
 ```
 
@@ -123,7 +125,8 @@ If you refactor, walk this list on mobile viewport before shipping.
 - Every device holds the **same** key, so there is no per-device revoke: change the access code and the others need the new one. Whatever moves a book to a new key must **rename the blob with it** — a revoke that leaves the ledger behind under the old key is a lost book.
 - Sync is **off unless switched on**, and single-device is still the supported default. When it is on it talks to ALFA's own VPS (`deploy/sync-server.js`, ~90 lines, one opaque JSON blob per token) and nowhere else. There are still no accounts: a token names a file that must already exist, and the service never creates one.
 - A refused write (409) **merges and retries once, inside the same exchange**. Do not "simplify" that into an error message: the next automatic attempt only comes after the next edit, so a device that gives up sits on its entry, out of step, with nothing on screen to say so.
-- The merge is a **union by entry id**, later `mt` winning a clash. It therefore **never deletes**: a deletion only reaches the other device while that device is online. This is the deliberate trade — losing an edit is recoverable, losing an entry is not.
+- The merge is a **union by entry id**, later `mt` winning a clash — plus **tombstones**, so that union can also carry a delete. A delete records `S.del[id] = Date.now()`, the map travels in the same blob as the entries, and the merge drops an entry whose tombstone is newer than the entry's own `mt`. An entry genuinely edited *after* the delete therefore still wins, so the reason the merge never deleted — losing an edit is recoverable, losing an entry is not — is kept, without the delete undoing itself. Tombstones merge as a union taking the later time, and are forgotten after `DEL_TTL` (180 days); a device offline for longer than that comes back and re-seeds what it still holds. `test/deletes.mjs` and `test/sync.mjs` hold both halves.
+  Undo, *Delete all entries* and undoing *Load sample data* all go through the same map, and an undo restamps `mt` so it outranks a tombstone the server may already have. A **restore from JSON** re-asserts what the file contains, for the same reason.
 - The access code is stripped from everything sent (`lockHash`, `lockSalt`, and the `sync` block itself). Each device keeps its own code, so a synced device is not an unlocked one.
 - `sw.js` must keep skipping any request carrying `X-Cashfra-Token`. Cache the sync exchange and the app reads a stale version number, every write after it is refused, and even a `401` replays as a `200`.
 

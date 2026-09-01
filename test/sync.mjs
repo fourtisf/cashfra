@@ -146,10 +146,7 @@ check(names.includes('$ONLY_A') && names.includes('$ONLY_B'),
       `both devices' work survives the merge (${names.filter(n => /ONLY/.test(n)).join(', ')})`);
 check(new Set(merged.tx.map(t => t.id)).size === merged.tx.length, 'no entry is duplicated by the merge');
 
-// ── syncing twice in a row is not a conflict ──────────────────────────────
-/* the second exchange must see the version the first one wrote. A service
-   worker serving the first GET from its cache would hide it, and every write
-   after that would be refused as stale. */
+/* pressing Sync now and reading back what the panel says */
 const syncStatus = async (d, times = 2) => {
   await d.page.click('#moreBtn');
   await d.page.waitForSelector('#ovPanel.on', { timeout: 3000 });
@@ -169,6 +166,61 @@ const syncStatus = async (d, times = 2) => {
   await d.page.waitForTimeout(300);
   return out;
 };
+
+// ── a delete travels, instead of undoing itself ───────────────────────────
+/* The merge is a union, so before tombstones nothing carried "this one is
+   gone". Deleting on A left the entry on the server; the very next pull — A's
+   own, four seconds later — handed it straight back, and it looked to ALFA
+   like the app was refusing to delete. Both halves are checked: it stays gone
+   on the device that deleted it, and the other device loses it too. */
+const delEntry = async (d, party) => {
+  const id = await d.page.evaluate(p =>
+    (JSON.parse(localStorage.getItem('fourtis:ledger:v3')).tx.find(t => t.party === p) || {}).id, party);
+  await d.page.click(`[data-ed="${id}"]`);
+  await d.page.waitForSelector('#ovForm.on', { timeout: 3000 });
+  await d.page.click('#fDel');
+  await d.page.waitForFunction(() => !document.getElementById('ovForm').classList.contains('on'), null, { timeout: 3000 });
+  await d.page.waitForTimeout(300);
+  return id;
+};
+const has = async (d, party) =>
+  d.page.evaluate(p => JSON.parse(localStorage.getItem('fourtis:ledger:v3')).tx.some(t => t.party === p), party);
+
+await addEntry(A, '$DOOMED', 6);
+await A.page.waitForTimeout(5200);                 // the entry reaches the server
+await B.page.evaluate(() => location.reload());    // and the other device
+await B.page.waitForSelector('#gate.on', { timeout: 5000 });
+for (const c of '162007') await B.page.click(`#gPad [data-k="${c}"]`);
+await B.page.waitForFunction(() => !document.getElementById('gate').classList.contains('on'), null, { timeout: 5000 });
+await B.page.waitForTimeout(2500);
+check(await has(B, '$DOOMED'), 'an entry both devices can see, before it is deleted');
+
+const doomedId = await delEntry(A, '$DOOMED');
+check(!(await has(A, '$DOOMED')), 'deleting it takes it off the device it was deleted on');
+await A.page.waitForTimeout(5200);                 // the push, then A pulls again
+await syncStatus(A, 1);
+check(!(await has(A, '$DOOMED')),
+      'and it is still gone after the sync that used to bring it back');
+const serverTx = await A.page.evaluate(async ([u, t]) => {
+  const r = await fetch(u, { headers: { 'X-Cashfra-Token': t } });
+  return (await r.json()).data;
+}, [SYNC, TOKEN]);
+check(!serverTx.tx.some(t => t.party === '$DOOMED'), 'the server lets it go too');
+check(serverTx.del && serverTx.del[doomedId] > 0, 'because the delete itself is what travelled');
+
+await syncStatus(B, 1);
+check(!(await has(B, '$DOOMED')), 'and the other device drops it on its next sync');
+
+// ── deleting on one device does not eat anything else ─────────────────────
+const survived = await B.page.evaluate(() =>
+  JSON.parse(localStorage.getItem('fourtis:ledger:v3')).tx.map(t => t.party));
+check(survived.includes('$ONLY_A') && survived.includes('$ONLY_B') && survived.includes('$ALPHA'),
+      `one delete removes one entry and nothing else (${survived.length} left)`);
+
+// ── syncing twice in a row is not a conflict ──────────────────────────────
+/* the second exchange must see the version the first one wrote. A service
+   worker serving the first GET from its cache would hide it, and every write
+   after that would be refused as stale. */
 check(await controlled(A), 'the service worker is running, as it is on the live site');
 const twice = await syncStatus(A);
 check(twice.every(t => /^Synced/.test(t)), `two syncs back to back both land (${twice.join(' | ')})`);

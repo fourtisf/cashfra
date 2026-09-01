@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-08-31-15">
+<meta name="cashfra-build" content="2026-09-01-1">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -782,7 +782,7 @@ var DEF={v:3,tx:[],
  brands:['Fourtis','Dexvra'],
  brand:'Fourtis',
  idr:16300, last:{tok:'SOL',ch:'SOL'}, demo:false, recSkip:'', lockHash:'', lockSalt:'', lockLen:0, lockNum:true, lockPreset:'',
- rateAuto:true, rateAt:0, bkAt:0, goal:0, lockIdle:300, contacts:{}, caps:[], seedFix:'',
+ rateAuto:true, rateAt:0, bkAt:0, goal:0, lockIdle:300, contacts:{}, caps:[], seedFix:'', del:{},
  sync:{url:'',token:'',email:'',ver:0,at:0},
  wallets:[['SOL',''],['BSC',''],['ETH',''],['BASE',''],['TRON','']], invNote:''
 };
@@ -849,6 +849,8 @@ function load(){
    var fix=false;
    S.tx.forEach(function(t){if(!t.brand){t.brand=S.brands[0];fix=true;}});
    if(normalizeTx())fix=true;
+   delMap();pruneDel();
+   if(applyDel())fix=true;
    if(S.brand===undefined)S.brand=S.brands[0];
    /* One-time sweep of the sample entries an earlier build seeded on first
       run. S.demo is only still true while every entry is untouched sample
@@ -1565,7 +1567,65 @@ function syncUrl(){
 function syncOn(){var c=S.sync||{};return !!(syncUrl()&&c.token&&!c.none);}
 function syncCfg(){if(!S.sync)S.sync={url:'',token:'',ver:0,at:0};return S.sync;}
 function syncSet(m){syncMsg=m;if($('#ovPanel').classList.contains('on')&&panel==='set')repaint();}
-function mergeTx(mine,theirs){
+/* Deleting is a fact, and a union merge cannot carry a fact about something
+   that is no longer there: the other device still holds the entry, hands it
+   back on the next pull, and the delete quietly undoes itself. It does not
+   even take two devices — one phone deleting an entry pulls it straight back
+   from the server four seconds later.
+   So a delete leaves a tombstone: the id and the moment, kept in S.del and
+   carried in the same blob as the entries. An entry is dropped when its
+   tombstone is newer than the entry's own last edit (`mt`), so a device that
+   really did edit it after the delete still wins and no work is lost — the
+   union's promise, kept, with the one case it was getting wrong fixed. */
+var DEL_TTL=180*864e5;   /* a device away longer than six months re-seeds what it holds */
+function delMap(){
+ if(!S.del||typeof S.del!=='object'||Array.isArray(S.del))S.del={};
+ return S.del;
+}
+function tombIds(ids){
+ var d=delMap(),now=Date.now();
+ (Array.isArray(ids)?ids:[ids]).forEach(function(id){if(id)d[id]=now;});
+}
+function untombIds(ids,stamp){
+ var d=delMap(),now=Date.now();
+ (Array.isArray(ids)?ids:[ids]).forEach(function(id){delete d[id];});
+ /* Bringing an entry back has to outrank the tombstone the server may already
+    be holding, or the next pull deletes it a second time. An undo is an edit. */
+ if(stamp)(Array.isArray(stamp)?stamp:[stamp]).forEach(function(t){if(t)t.mt=now;});
+}
+function isGone(t,d){
+ var w=d[t.id];
+ return w!==undefined&&num(w)>num(t.mt);
+}
+/* Tombstones merge as a union taking the later time, so it never matters which
+   side is "newer" — only that neither side forgets. */
+function mergeDel(mine,theirs){
+ var out={},k;
+ for(k in mine||{})if(Object.prototype.hasOwnProperty.call(mine,k))out[k]=num(mine[k]);
+ for(k in theirs||{})if(Object.prototype.hasOwnProperty.call(theirs,k)){
+  if(num(theirs[k])>num(out[k]))out[k]=num(theirs[k]);
+ }
+ return out;
+}
+function pruneDel(){
+ var d=delMap(),cut=Date.now()-DEL_TTL,k,n=0;
+ for(k in d)if(Object.prototype.hasOwnProperty.call(d,k)&&num(d[k])<cut){delete d[k];n++;}
+ return n;
+}
+/* Drop anything a tombstone has outlived — used after a merge, and once on
+   load, so a blob written by a build that did not know about tombstones is
+   tidied up on the way in rather than reappearing. */
+function applyDel(){
+ var d=delMap(),n=S.tx.length;
+ S.tx=S.tx.filter(function(t){return !isGone(t,d);});
+ return S.tx.length!==n;
+}
+/* What the book actually holds, independent of the order it is held in: the
+   merge sorts, the local copy may not, and a signature that noticed the sort
+   would report a change on every quiet sync and repaint the screen under
+   ALFA's thumb every four seconds. */
+function txSig(a){return a.map(function(t){return t.id+':'+num(t.mt);}).sort().join(',');}
+function mergeTx(mine,theirs,gone){
  var by={},out=[],i,t;
  for(i=0;i<mine.length;i++)by[mine[i].id]=mine[i];
  for(i=0;i<theirs.length;i++){
@@ -1573,7 +1633,8 @@ function mergeTx(mine,theirs){
   var have=by[t.id];
   if(!have||num(t.mt)>num(have.mt))by[t.id]=t;
  }
- for(var k in by)if(by.hasOwnProperty(k))out.push(by[k]);
+ var d=gone||{};
+ for(var k in by)if(by.hasOwnProperty(k)&&!isGone(by[k],d))out.push(by[k]);
  out.sort(function(a,b){return b.date.localeCompare(a.date)||String(b.id).localeCompare(String(a.id));});
  return out;
 }
@@ -1604,8 +1665,12 @@ function syncNow(quiet,retry){
   if(r.code!==200)throw new Error('Server said '+r.code);
   var remote=r.body.data;
   if(remote&&Array.isArray(remote.tx)){
-   var merged=mergeTx(S.tx,remote.tx);
-   var grew=merged.length!==S.tx.length;
+   /* tombstones first: the merge below needs both sides' deletions to know
+      what is actually still in the book */
+   S.del=mergeDel(delMap(),remote.del);pruneDel();
+   var was=txSig(S.tx);
+   var merged=mergeTx(S.tx,remote.tx,S.del);
+   var grew=txSig(merged)!==was;
    S.tx=merged;
    /* settings follow whichever side was written last */
    if(num(r.body.at)>num(syncCfg().at)){
@@ -1628,7 +1693,8 @@ function syncNow(quiet,retry){
       device that gives up here stays quietly behind until its next edit,
       which is exactly the silence this whole feature exists to remove. */
    if(!retry&&r.body&&r.body.data&&Array.isArray(r.body.data.tx)){
-    S.tx=mergeTx(S.tx,r.body.data.tx);fillStatic();render();
+    S.del=mergeDel(delMap(),r.body.data.del);
+    S.tx=mergeTx(S.tx,r.body.data.tx,S.del);fillStatic();render();
     syncBusy=false;
     return syncNow(quiet,true);
    }
@@ -1905,9 +1971,10 @@ function del(id){
  var i=-1;S.tx.forEach(function(t,x){if(t.id===id)i=x;});
  if(i<0)return;
  undoBuf={t:S.tx[i],i:i};
- S.tx.splice(i,1);save();render();
+ S.tx.splice(i,1);tombIds(id);save();render();
  toast('Entry deleted','Undo',function(){
   if(!undoBuf)return;
+  untombIds(undoBuf.t.id,undoBuf.t);
   S.tx.splice(undoBuf.i,0,undoBuf.t);undoBuf=null;save();render();
  });
 }
@@ -2822,9 +2889,12 @@ document.addEventListener('click',function(e){
  }
  if(d.wipe!==undefined){
   if(!S.tx.length){toast('Already empty');return;}
-  var bak=S.tx.slice();S.tx=[];S.demo=false;save();render();
+  var bak=S.tx.slice(),bakIds=bak.map(function(t){return t.id;});
+  S.tx=[];S.demo=false;tombIds(bakIds);save();render();
   if($('#ovPanel').classList.contains('on'))repaint();
-  toast('All entries deleted','Undo',function(){S.tx=bak;save();render();if($('#ovPanel').classList.contains('on'))repaint();});
+  toast('All entries deleted','Undo',function(){
+   untombIds(bakIds,bak);
+   S.tx=bak;save();render();if($('#ovPanel').classList.contains('on'))repaint();});
   return;
  }
  if(d.tg!==undefined){
@@ -2854,6 +2924,7 @@ document.addEventListener('click',function(e){
   if(S.tx.length){toast('Clear the ledger first');return;}
   seed();save();fillStatic();render();repaint();
   toast(S.tx.length+' sample entries loaded','Undo',function(){
+   tombIds(S.tx.map(function(t){return t.id;}));
    S.tx=[];S.demo=false;save();render();repaint();
   });
   return;
@@ -2912,7 +2983,13 @@ document.addEventListener('change',function(e){
   try{
    var o=JSON.parse(r.result);
    if(!o||!Array.isArray(o.tx))throw new Error('bad');
-   S=Object.assign(clone(DEF),o);normalizeTx();save();fillStatic();render();repaint();
+   S=Object.assign(clone(DEF),o);normalizeTx();
+   /* Restoring is the owner stating that these entries exist. Anything in the
+      file that a tombstone would kill is re-asserted here, or the next sync
+      would quietly delete the restore back out again. */
+   var gone=delMap(),back=S.tx.filter(function(t){return gone[t.id]!==undefined||!num(t.mt);});
+   untombIds(back.map(function(t){return t.id;}),back);
+   save();fillStatic();render();repaint();
    toast('Restored \u00b7 '+S.tx.length+' entries');
   }catch(x){toast('That file was not recognised');}
  };
