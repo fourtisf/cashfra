@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-02-2">
+<meta name="cashfra-build" content="2026-09-02-3">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -913,15 +913,14 @@ function save(){
 var SHARED='*';
 /* Commission is earned on one deal under one brand, so it is never shared —
    and letting it be would quietly break the netting in business rule 6. */
-/* Taking your own profit out is not spending it. A cashout moves money from
-   the wallets to ALFA's rupiah — the books are exactly as rich afterwards, so
-   it must never touch Money out, net profit, the spending mix or the caps.
-   It is reported only as what it is: money taken out, and what is left.
-   Nothing shares a withdrawal either — one transfer was made, from one
-   brand's money, so it is not split across brands the way a bill is. */
+/* ALFA moving his own profit out to rupiah. It counts as Money out and comes
+   off net profit like every other cost — his call, made twice and deliberately:
+   what leaves the wallet leaves the books. So Cashout behaves as an ordinary
+   out category everywhere, and is only kept track of separately so the
+   Cash taken out section can still say how much of the money out was him
+   paying himself, and what the business had earned before he did. */
 var CASHOUT='Cashout';
-function isCashout(t){return t.type==='out'&&t.cat===CASHOUT;}
-var NOT_SHARED=['Team commission',CASHOUT];
+var NOT_SHARED=['Team commission'];
 function inScope(t){return !brandView||t.brand===brandView||t.brand===SHARED;}
 /* How much of a shared cost is this brand's? Its share of the money that came
    in over the same stretch — the only split that is not arbitrary: a server
@@ -1009,8 +1008,7 @@ function totals(L){
   }else{
    o.no++;
    if(t.cat==='Team commission'){var k2=(t.party||'(no name)');P[k2]=(P[k2]||0)+num(t.usd);}
-   else if(t.cat===CASHOUT)o.cash+=num(t.usd);
-   else o.go+=num(t.usd);
+   else{if(t.cat===CASHOUT)o.cash+=num(t.usd);o.go+=num(t.usd);}
   }
  });
  var gc=0,due=0,names={};
@@ -1192,7 +1190,7 @@ function renderList(M){
  L.forEach(function(t){if(!g[t.date]){g[t.date]=[];order.push(t.date);}g[t.date].push(t);});
  var T=totals(L);
  el.innerHTML=order.map(function(d){
-  var dn=g[d].reduce(function(s,t){return s+(t.type==='in'?recv(t)-comv(t):(isCashout(t)?0:-num(t.usd)));},0);
+  var dn=g[d].reduce(function(s,t){return s+(t.type==='in'?recv(t)-comv(t):-num(t.usd));},0);
   return'<div class="dh"><span>'+dayLbl(d)+'</span><b class="'+(dn>=0?'pos':'neg')+' tn">'+(dn>=0?'+':'-')+usd(dn).replace('-','')+'</b></div>'+
    '<div class="grp">'+g[d].map(row).join('')+'</div>';
  }).join('')+
@@ -2141,7 +2139,6 @@ function catBuckets(L){
   if(t.type==='in'){v=recv(t);if(v<=0)return;if(!m[k])m[k]={v:0,kind:'in'};}
   else{
    if(t.cat==='Team commission')return;   /* settles an accrual, never a new cost */
-   if(t.cat===CASHOUT)return;             /* moved, not spent */
    v=num(t.usd);if(v<=0)return;
    if(!m[k])m[k]={v:0,kind:'out'};
   }
@@ -2222,24 +2219,24 @@ function sharedSec(){
     '<span class="r"><b>'+usdc(tot*f)+'</b></span></div>';
   }).join(''):'')+'</div>';
 }
-/* A withdrawal is not a cost, so nothing above this counts it — which leaves
-   the one question a withdrawal actually raises: how much of what the business
-   earned is still in the wallets. Earned all time, minus taken out all time. */
+/* Withdrawals are inside Money out, so net profit above is already after them.
+   What that hides is the split ALFA still needs to see: how much of the money
+   out was him paying himself, and what the business had earned before he did. */
 function cashSec(T){
  var all=sc(S.tx.filter(inScope),null);
  var A=totals(all);
  if(A.cash<=0.009)return'';
- var left=A.net-A.cash;
+ var earned=A.net+A.cash;   /* net is already after withdrawals — add them back */
  return'<div class="sec"><h3>Cash taken out</h3>'+
-  '<p class="tiny">Moving your own profit to rupiah is not a cost, so none of it '+
-  'is in Money out or in net profit above. This is the only place it is counted.</p>'+
+  '<p class="tiny">Withdrawals count as Money out, so the net profit above is '+
+  'already after them. This separates what the business earned from what you took.</p>'+
   (T.cash>0.009?'<div class="kv"><span>'+esc(perLabel(0))+'</span><b>'+usdc(T.cash)+'</b></div>':'')+
   '<div class="kv"><span>Taken out, all time</span><b>'+usdc(A.cash)+'</b></div>'+
-  '<div class="kv"><span>Earned, all time<div class="s">after costs and commission</div></span>'+
-   '<span class="r">'+usdc(A.net)+'</span></div>'+
-  '<div class="kv"><span>Still in the book<div class="s">'+
-   (left>=0?'earned but not yet taken out':'taken out more than the books have earned')+
-   '</div></span><b class="'+(left>=0?'pos':'neg')+'">'+usdc(left)+'</b></div></div>';
+  '<div class="kv"><span>Earned, all time<div class="s">after costs and commission, before anything was taken</div></span>'+
+   '<span class="r">'+usdc(earned)+'</span></div>'+
+  '<div class="kv"><span>Left after withdrawals<div class="s">'+
+   (A.net>=0?'what the books still show':'taken out more than the books earned')+
+   '</div></span><b class="'+(A.net>=0?'pos':'neg')+'">'+usdc(A.net)+'</b></div></div>';
 }
 function brandSec(){
  var bs=S.brands.filter(function(b){return b;});
@@ -2355,7 +2352,7 @@ function capSec(T){
  if(!caps.length||T.gi<=0)return'';
  var P=periodTx(0),spend={};
  P.forEach(function(t){
-  if(t.type!=='out'||t.cat==='Team commission'||t.cat===CASHOUT)return;
+  if(t.type!=='out'||t.cat==='Team commission')return;
   spend[t.cat]=(spend[t.cat]||0)+num(t.usd);
  });
  spend['Team commission']=T.gc;
