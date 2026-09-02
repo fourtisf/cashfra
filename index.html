@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-02-1">
+<meta name="cashfra-build" content="2026-09-02-2">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -724,7 +724,7 @@ function $$(s){return Array.prototype.slice.call(document.querySelectorAll(s));}
 
 var CATS={
  "in":['Listing','Xpress listing','Trending','Banner ads','Broadcast','Partnership','Other'],
- "out":['Team bonus','Team commission','Community prize','TG views bot','Blue-tick shiller','Tip shiller','SMMStone','X API','X blue tick','MongoDB','Other']
+ "out":['Team bonus','Team commission','Community prize','TG views bot','Blue-tick shiller','Tip shiller','SMMStone','X API','X blue tick','MongoDB','Cashout','Other']
 };
 var CMETA={
  'Listing':['\ud83d\ude80','#EFECFF'],
@@ -743,6 +743,7 @@ var CMETA={
  'X API':['\ud835\udd4f','#E7F0FF'],
  'X blue tick':['\u2611\ufe0f','#E7F0FF'],
  'MongoDB':['\ud83c\udf43','#E7F7EE'],
+ 'Cashout':['\ud83c\udfe7','#EFEFF4'],
  'Bot views':['\ud83e\udd16','#E7F0FF'],
  'Team marketing':['\ud83d\udcca','#EFECFF'],
  'Activity event':['\ud83c\udf89','#FFEFE2'],
@@ -912,7 +913,15 @@ function save(){
 var SHARED='*';
 /* Commission is earned on one deal under one brand, so it is never shared —
    and letting it be would quietly break the netting in business rule 6. */
-var NOT_SHARED=['Team commission'];
+/* Taking your own profit out is not spending it. A cashout moves money from
+   the wallets to ALFA's rupiah — the books are exactly as rich afterwards, so
+   it must never touch Money out, net profit, the spending mix or the caps.
+   It is reported only as what it is: money taken out, and what is left.
+   Nothing shares a withdrawal either — one transfer was made, from one
+   brand's money, so it is not split across brands the way a bill is. */
+var CASHOUT='Cashout';
+function isCashout(t){return t.type==='out'&&t.cat===CASHOUT;}
+var NOT_SHARED=['Team commission',CASHOUT];
 function inScope(t){return !brandView||t.brand===brandView||t.brand===SHARED;}
 /* How much of a shared cost is this brand's? Its share of the money that came
    in over the same stretch — the only split that is not arbitrary: a server
@@ -986,7 +995,7 @@ function step(d){
  render();
 }
 function totals(L){
- var o={gi:0,go:0,pi:0,ni:0,no:0};
+ var o={gi:0,go:0,pi:0,ni:0,no:0,cash:0};
  var A={},M={},P={};
  L.forEach(function(t){
   if(t.type==='in'){
@@ -1000,6 +1009,7 @@ function totals(L){
   }else{
    o.no++;
    if(t.cat==='Team commission'){var k2=(t.party||'(no name)');P[k2]=(P[k2]||0)+num(t.usd);}
+   else if(t.cat===CASHOUT)o.cash+=num(t.usd);
    else o.go+=num(t.usd);
   }
  });
@@ -1182,12 +1192,13 @@ function renderList(M){
  L.forEach(function(t){if(!g[t.date]){g[t.date]=[];order.push(t.date);}g[t.date].push(t);});
  var T=totals(L);
  el.innerHTML=order.map(function(d){
-  var dn=g[d].reduce(function(s,t){return s+(t.type==='in'?recv(t)-comv(t):-num(t.usd));},0);
+  var dn=g[d].reduce(function(s,t){return s+(t.type==='in'?recv(t)-comv(t):(isCashout(t)?0:-num(t.usd)));},0);
   return'<div class="dh"><span>'+dayLbl(d)+'</span><b class="'+(dn>=0?'pos':'neg')+' tn">'+(dn>=0?'+':'-')+usd(dn).replace('-','')+'</b></div>'+
    '<div class="grp">'+g[d].map(row).join('')+'</div>';
  }).join('')+
  '<div class="tot"><span>'+L.length+(L.length===1?' entry':' entries')+'</span>'+
- '<span>in <b class="pos">'+usd(T.gi)+'</b> &nbsp; out <b class="neg">'+usd(T.go+T.gc)+'</b> &nbsp; net <b class="'+(T.net>=0?'pos':'neg')+'">'+usd(T.net)+'</b></span></div>'+
+ '<span>in <b class="pos">'+usd(T.gi)+'</b> &nbsp; out <b class="neg">'+usd(T.go+T.gc)+'</b> &nbsp; net <b class="'+(T.net>=0?'pos':'neg')+'">'+usd(T.net)+'</b>'+
+ (T.cash>0.009?' &nbsp; taken out <b>'+usd(T.cash)+'</b>':'')+'</span></div>'+
  demoLine();
 }
 /* An empty book on a device that should have one is the moment to say what
@@ -2130,6 +2141,7 @@ function catBuckets(L){
   if(t.type==='in'){v=recv(t);if(v<=0)return;if(!m[k])m[k]={v:0,kind:'in'};}
   else{
    if(t.cat==='Team commission')return;   /* settles an accrual, never a new cost */
+   if(t.cat===CASHOUT)return;             /* moved, not spent */
    v=num(t.usd);if(v<=0)return;
    if(!m[k])m[k]={v:0,kind:'out'};
   }
@@ -2209,6 +2221,25 @@ function sharedSec(){
    return'<div class="kv"><span>'+esc(b)+'<div class="s">'+Math.round(f*100)+'% of the money in</div></span>'+
     '<span class="r"><b>'+usdc(tot*f)+'</b></span></div>';
   }).join(''):'')+'</div>';
+}
+/* A withdrawal is not a cost, so nothing above this counts it — which leaves
+   the one question a withdrawal actually raises: how much of what the business
+   earned is still in the wallets. Earned all time, minus taken out all time. */
+function cashSec(T){
+ var all=sc(S.tx.filter(inScope),null);
+ var A=totals(all);
+ if(A.cash<=0.009)return'';
+ var left=A.net-A.cash;
+ return'<div class="sec"><h3>Cash taken out</h3>'+
+  '<p class="tiny">Moving your own profit to rupiah is not a cost, so none of it '+
+  'is in Money out or in net profit above. This is the only place it is counted.</p>'+
+  (T.cash>0.009?'<div class="kv"><span>'+esc(perLabel(0))+'</span><b>'+usdc(T.cash)+'</b></div>':'')+
+  '<div class="kv"><span>Taken out, all time</span><b>'+usdc(A.cash)+'</b></div>'+
+  '<div class="kv"><span>Earned, all time<div class="s">after costs and commission</div></span>'+
+   '<span class="r">'+usdc(A.net)+'</span></div>'+
+  '<div class="kv"><span>Still in the book<div class="s">'+
+   (left>=0?'earned but not yet taken out':'taken out more than the books have earned')+
+   '</div></span><b class="'+(left>=0?'pos':'neg')+'">'+usdc(left)+'</b></div></div>';
 }
 function brandSec(){
  var bs=S.brands.filter(function(b){return b;});
@@ -2324,7 +2355,7 @@ function capSec(T){
  if(!caps.length||T.gi<=0)return'';
  var P=periodTx(0),spend={};
  P.forEach(function(t){
-  if(t.type!=='out'||t.cat==='Team commission')return;
+  if(t.type!=='out'||t.cat==='Team commission'||t.cat===CASHOUT)return;
   spend[t.cat]=(spend[t.cat]||0)+num(t.usd);
  });
  spend['Team commission']=T.gc;
@@ -2466,6 +2497,7 @@ function insHtml(){
    bars(gout,true,(costOf==='income'&&T.gi>0)?T.gi:0)+'</div>':'')+
   calSec()+
   capSec(T)+
+  cashSec(T)+
   cmpSec()+
   sharedSec()+
   brandSec()+
