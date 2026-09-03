@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-03-4">
+<meta name="cashfra-build" content="2026-09-03-5">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -796,7 +796,7 @@ var DEF={v:3,tx:[],
 };
 var S=clone(DEF);
 var anchor=new Date(), flt='', editId=null, fType='in', fTokV='SOL', fChainV='SOL', fBrandV='', brandView='', formPkg='', panel='menu', undoBuf=null;
-var mixAll=false, ratePrefill='', rateBusy=false, hidAt=0, autoLocked=false, costOf='spend', cliOpen='', teamOpen='', shillOpen='', shillAll=false;
+var mixAll=false, ratePrefill='', rateBusy=false, hidAt=0, autoLocked=false, costOf='spend', cliOpen='', teamOpen='', shillOpen='', shillAll=false, shillDay=false;
 var syncBusy=false, syncMsg='', syncT=null, syncSaving=false;
 
 function clone(o){return JSON.parse(JSON.stringify(o));}
@@ -2871,6 +2871,7 @@ function contactLinks(v){
    switching them here switches the hero too rather than inventing a second
    idea of "this week". */
 function shillScope(){
+ if(shillDay){var d=today();return S.tx.filter(function(t){return inScope(t)&&t.date===d;});}
  return shillAll?S.tx.filter(inScope):periodTx(0);
 }
 function shillRows(L){
@@ -2899,6 +2900,7 @@ function dSpan(a,b){
 }
 /* What the panel is showing, said in dates rather than left to be guessed. */
 function shillWhen(){
+ if(shillDay)return'Today \u00b7 '+dmy(today());
  if(shillAll){
   var lo='',hi='';
   S.tx.forEach(function(t){
@@ -2920,14 +2922,19 @@ function shillHtml(){
   if(!inScope(t)||t.type!=='in')return;
   if(!broughtBy(t)){unattr++;unv+=recv(t);}
  });
- var seg='<div class="mseg"><button data-sper="w"'+(!shillAll&&per==='w'?' class="on"':'')+'>Weekly</button>'+
-  '<button data-sper="m"'+(!shillAll&&per==='m'?' class="on"':'')+'>Monthly</button>'+
-  '<button data-sper="all"'+(shillAll?' class="on"':'')+'>All time</button></div>'+
+ var pl=!shillDay&&!shillAll;
+ /* One short word each. Four of the longer labels do not fit a 320px phone —
+    and they do not overflow either, they wrap, which is why measuring
+    scrollWidth said it was fine while "All time" sat on two lines. */
+ var seg='<div class="mseg"><button data-sper="d"'+(shillDay?' class="on"':'')+'>Day</button>'+
+  '<button data-sper="w"'+(pl&&per==='w'?' class="on"':'')+'>Week</button>'+
+  '<button data-sper="m"'+(pl&&per==='m'?' class="on"':'')+'>Month</button>'+
+  '<button data-sper="all"'+(shillAll?' class="on"':'')+'>All</button></div>'+
   '<p class="tiny" style="margin:6px 0 0"><b>'+esc(shillWhen())+'</b></p>';
  if(!rows.length)
   return seg+'<p class="tiny" style="padding:10px 0 20px">'+
    (S.tx.some(function(t){return inScope(t)&&t.type==='in'&&broughtBy(t);})
-    ?'Nobody brought a listing in this stretch. Try <b>All time</b>, or step the period with \u2039 \u203a on the hero.'
+    ?'Nobody brought a listing in '+esc(shillWhen())+'. Try <b>All time</b>, or step the period with \u2039 \u203a on the hero.'
     :'Nobody is credited with a listing yet. Fill in <b>Added by</b> when you log money in \u2014 that is the whole of it, and this fills itself.')+'</p>';
  var tot=0,deals=0,guessed=0;
  rows.forEach(function(o){tot+=o.r;deals+=o.d;guessed+=o.guessed;});
@@ -2946,7 +2953,42 @@ function shillHtml(){
    ' credited from their commission line, because <b>Added by</b> was empty. Open the entry and set it to be sure.</p>':'')+
   (unattr?'<div class="sec"><h3>Not credited to anyone</h3><div class="kv"><span>'+unattr+
    (unattr===1?' listing':' listings')+'<div class="s">no Added by, and no single commission line to infer it from</div></span>'+
-   '<b>'+usdc(unv)+'</b></div></div>':'');
+   '<b>'+usdc(unv)+'</b></div></div>':'')+
+  shillLog(L);
+}
+/* The listings themselves, one row each, under the day they landed on. The
+   leaderboard above is a conclusion; ALFA asked to see what it was drawn
+   from — four listings today should read as four lines, not as one total.
+   Uncredited ones are in here too, said as such: leaving them out would make
+   the day's count disagree with the Activity list for no good reason. */
+function shillLog(L){
+ var ins=L.filter(function(t){return inScope(t)&&t.type==='in';});
+ if(!ins.length)return'';
+ ins.sort(function(a,b){return b.date.localeCompare(a.date)||String(b.id).localeCompare(String(a.id));});
+ var days=[],byDay={};
+ ins.forEach(function(t){
+  if(!byDay[t.date]){byDay[t.date]=[];days.push(t.date);}
+  byDay[t.date].push(t);
+ });
+ return'<div class="sec"><h3>Every listing</h3>'+
+  '<p class="tiny" style="margin-top:0">'+ins.length+(ins.length===1?' listing':' listings')+
+  ' in '+esc(shillWhen())+', day by day. Tap one to open it \u2014 that is where <b>Added by</b> is set.</p>'+
+  days.map(function(d){
+   var g=byDay[d],sum=0;
+   g.forEach(function(t){sum+=recv(t);});
+   return'<div class="dh" style="padding:10px 0 2px"><span>'+esc(dmy(d))+' \u00b7 '+
+     g.length+(g.length===1?' listing':' listings')+'</span><b class="pos tn">'+usdc(sum)+'</b></div>'+
+    g.map(function(t){
+     var who=broughtBy(t);
+     return'<button class="kv" data-ed="'+t.id+'"><span>'+esc(t.party||'\u2014')+
+      '<div class="s">'+(who?esc(who)+(byInferred(t)?' \u00b7 from commission':''):'not credited')+
+      ' \u00b7 '+esc(t.pkg||t.cat||'\u2014')+'</div></span>'+
+      '<span class="r"><b class="pos">'+usdc(recv(t))+'</b>'+
+      (comv(t)>0.009?'<div class="s">fee '+usdc(comv(t))+'</div>':'')+
+      (recv(t)<num(t.usd)-0.009?'<div class="s">of '+usdc(num(t.usd))+'</div>':'')+
+      '</span></button>';
+    }).join('');
+  }).join('')+'</div>';
 }
 function oneShillHtml(){
  var k=shillOpen,n=k.toLowerCase();
@@ -3172,7 +3214,9 @@ document.addEventListener('click',function(e){
  }
  if(d.mix!==undefined){mixAll=(d.mix==='all');repaint();return;}
  if(d.sper!==undefined){
+  shillDay=(d.sper==='d');
   if(d.sper==='all')shillAll=true;
+  else if(d.sper==='d')shillAll=false;
   else{
    shillAll=false;
    if(per!==d.sper){
