@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-02-3">
+<meta name="cashfra-build" content="2026-09-03-1">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -921,6 +921,36 @@ var SHARED='*';
    paying himself, and what the business had earned before he did. */
 var CASHOUT='Cashout';
 var NOT_SHARED=['Team commission'];
+/* Money handed straight to somebody on the team, outside the commission book:
+   a tip, a bonus, the blue tick bought for their account. These settle nothing
+   — they are not accruals and they must never enter rule 6's netting, or a tip
+   would read as paying off a commission that is still owed. They are reported
+   beside it instead, which is the whole point: one page per shiller, every
+   date and every amount, however it reached them. Matched on the party name,
+   the same way Team commission payouts already are. */
+var SHILL_PAY=['Tip shiller','Blue-tick shiller','Team bonus'];
+function shillPays(k){
+ var n=String(k).trim().toLowerCase(),out=[];
+ S.tx.forEach(function(t){
+  if(!inScope(t)||t.type!=='out')return;
+  if(SHILL_PAY.indexOf(t.cat)<0)return;
+  if(String(t.party||'(no name)').trim().toLowerCase()!==n)return;
+  out.push(t);
+ });
+ out.sort(function(a,b){return b.date.localeCompare(a.date);});
+ return out;
+}
+/* Everyone the team money reached, by the name it was sent to. */
+function shillNames(){
+ var seen={},order=[];
+ S.tx.forEach(function(t){
+  if(!inScope(t)||t.type!=='out'||SHILL_PAY.indexOf(t.cat)<0)return;
+  var k=String(t.party||'').trim();if(!k)return;
+  var low=k.toLowerCase();
+  if(!seen[low]){seen[low]=k;order.push(k);}
+ });
+ return order;
+}
 function inScope(t){return !brandView||t.brand===brandView||t.brand===SHARED;}
 /* How much of a shared cost is this brand's? Its share of the money that came
    in over the same stretch — the only split that is not arbitrary: a server
@@ -2505,8 +2535,24 @@ function insHtml(){
 function comHtml(){
  var L=S.tx.filter(function(t){return inScope(t)&&t.type==='in'&&comv(t)>0;});
  var pays=S.tx.filter(function(t){return inScope(t)&&t.type==='out'&&t.cat==='Team commission';});
- if(!L.length&&!pays.length)return'<p class="tiny" style="padding:10px 0 20px">No commission yet'+(brandView?' for '+esc(brandView):'')+'. Log it inside a money-in entry (under \u201cMore details\u201d), or pay it out directly with a <b>Team commission</b> expense.</p>';
  var book=comBook(brandView);
+ /* Whoever was tipped, bonused or bought a blue tick but has no commission
+    line of their own. They are listed apart from the netted book below, not
+    inside it: that book is rule 6's, and a tip has no place in its arithmetic
+    — but the man still needs one tap to see what he sent them. */
+ var extra=shillNames().filter(function(k){
+  var n=k.trim().toLowerCase();
+  return !Object.keys(book).some(function(x){return x.trim().toLowerCase()===n;});
+ });
+ var extraHtml=extra.length?'<div class="sec"><h3>Paid directly only</h3>'+
+  '<p class="tiny" style="margin-top:0">No commission of their own \u2014 tips, bonuses and blue ticks. Tap for the dates.</p>'+
+  extra.map(function(k){
+   var ps=shillPays(k),v=0;ps.forEach(function(t){v+=num(t.usd);});
+   return'<button class="kv" data-team="'+esc(k)+'"><span>'+esc(k)+'<div class="s">'+
+    ps.length+(ps.length===1?' payment':' payments')+'</div></span>'+
+    '<span class="r"><b class="neg">'+usdc(v)+'</b><div class="s">\u203a</div></span></button>';
+  }).join('')+'</div>':'';
+ if(!L.length&&!pays.length)return extraHtml||('<p class="tiny" style="padding:10px 0 20px">No commission yet'+(brandView?' for '+esc(brandView):'')+'. Log it inside a money-in entry (under \u201cMore details\u201d), or pay it out directly with a <b>Team commission</b> expense.</p>');
  var names=Object.keys(book).sort(function(a,b){return book[b].owed-book[a].owed;});
  var tot=0,owedT=0;
  names.forEach(function(k){tot+=book[k].cost;owedT+=book[k].owed;});
@@ -2521,10 +2567,13 @@ function comHtml(){
    if(o.d)bits.push(o.d+(o.d===1?' deal':' deals')+' \u00b7 tracked '+usd(o.a));
    if(o.p)bits.push('paid out '+usd(o.p));
    if(tot>0.009&&o.cost)bits.push(Math.round(o.cost/tot*100)+'% of the pot');
+   var tp=shillPays(k),tv=0;tp.forEach(function(t){tv+=num(t.usd);});
+   if(tv>0.009)bits.push('paid directly '+usd(tv));
    return'<button class="kv" data-team="'+esc(k)+'"><span>'+esc(k)+'<div class="s">'+esc(bits.join(' \u00b7 '))+'</div></span>'+
     '<span class="r">'+(o.owed>0.009?'<b class="neg">'+usd(o.owed)+'</b>':'<b style="color:var(--faint)">settled</b>')+
     '<div class="s">\u203a</div></span></button>';
   }).join('')+'</div>'+
+  extraHtml+
   (L.length?'<div class="sec"><h3>Per deal</h3>'+L.sort(function(a,b){return b.date.localeCompare(a.date);}).map(function(t){
    return (t.coms||[]).map(function(c,ci){
     if(!num(c.usd))return'';
@@ -2552,6 +2601,8 @@ function teamRows(k){
    });
   }else if(t.cat==='Team commission'&&String(t.party||'(no name)').trim().toLowerCase()===n)pays.push(t);
  });
+ var tips=shillPays(k),tipped=0;
+ tips.forEach(function(t){tipped+=num(t.usd);});
  deals.sort(function(a,b){return b.t.date.localeCompare(a.t.date);});
  pays.sort(function(a,b){return b.date.localeCompare(a.date);});
  var earned=0,marked=0,touched=0,paid=0;
@@ -2563,7 +2614,8 @@ function teamRows(k){
  /* the same netting as everywhere else: tracked and paid out are two views of
     one debt, never two debts (business rule 6) */
  var credit=Math.min(earned,Math.max(paid,marked));
- return{deals:deals,pays:pays,earned:earned,paid:paid,marked:marked,
+ return{deals:deals,pays:pays,tips:tips,tipped:tipped,
+  earned:earned,paid:paid,marked:marked,
   touched:touched,owed:Math.max(0,earned-credit),
   rate:touched>0.009?earned/touched*100:0};
 }
@@ -2573,25 +2625,38 @@ function teamDefault(k){
  return v;
 }
 function teamText(k){
- var o=teamRows(k),L=[];
- L.push('Commission \u2014 '+k);
+ var o=teamRows(k),L=[],hasCom=!!(o.deals.length||o.pays.length);
+ /* somebody who was only ever tipped has no commission to report, and a
+    statement telling them they earned $0.00 on 0 deals is worse than none */
+ L.push((hasCom?'Commission \u2014 ':'Team payments \u2014 ')+k);
  if(brandView)L.push(brandView);
- L.push('');
- o.deals.forEach(function(d){
-  L.push(dmy(d.t.date)+'  '+(d.t.party||'-')+'  deal '+usd(num(d.t.usd))+
-   (d.c.pct?'  @'+d.c.pct+'%':'')+'  \u2192 '+usd(num(d.c.usd))+(d.c.paid?'  (paid)':''));
- });
- L.push('');
- L.push('Earned      '+usd(o.earned)+'  on '+o.deals.length+(o.deals.length===1?' deal':' deals'));
- if(o.paid)L.push('Paid out    '+usd(o.paid));
- L.push('Still owed  '+usd(o.owed));
+ if(hasCom){
+  L.push('');
+  o.deals.forEach(function(d){
+   L.push(dmy(d.t.date)+'  '+(d.t.party||'-')+'  deal '+usd(num(d.t.usd))+
+    (d.c.pct?'  @'+d.c.pct+'%':'')+'  \u2192 '+usd(num(d.c.usd))+(d.c.paid?'  (paid)':''));
+  });
+  L.push('');
+  L.push('Earned      '+usd(o.earned)+'  on '+o.deals.length+(o.deals.length===1?' deal':' deals'));
+  if(o.paid)L.push('Paid out    '+usd(o.paid));
+  L.push('Still owed  '+usd(o.owed));
+ }
+ if(o.tips.length){
+  L.push('');
+  L.push('Paid directly \u2014 outside commission');
+  o.tips.forEach(function(t){
+   L.push(dmy(t.date)+'  '+t.cat+(t.note?'  '+t.note:'')+'  \u2192 '+usd(num(t.usd)));
+  });
+  L.push('Total       '+usd(o.tipped));
+ }
  if(S.invNote)L.push('\n'+S.invNote);
  return L.join('\n');
 }
 function oneTeamHtml(){
  var k=teamOpen,o=teamRows(k);
- if(!o.deals.length&&!o.pays.length)
+ if(!o.deals.length&&!o.pays.length&&!o.tips.length)
   return'<p class="tiny">Nothing for '+esc(k)+' in '+esc(brandView||'any brand')+'.</p>';
+ var hasCom=!!(o.deals.length||o.pays.length);
  var def=teamDefault(k);
  /* six periods of what this person earned — a commission that is climbing
     while money in is flat is worth seeing before it is a surprise */
@@ -2608,7 +2673,8 @@ function oneTeamHtml(){
    :((o.rate>def?'+':'')+(o.rate-def).toFixed(1)+' pts vs default');
  var book=comBook(brandView),pot=0;
  Object.keys(book).forEach(function(x){pot+=book[x].cost;});
- return'<div class="sec"><div class="tot3">'+
+ return'<div class="sec">'+
+  (hasCom?'<div class="tot3">'+
    '<div><div class="t">Earned</div><div class="v">'+usdc(o.earned)+'</div></div>'+
    '<div><div class="t">Paid</div><div class="v">'+usdc(Math.min(o.earned,Math.max(o.paid,o.marked)))+'</div></div>'+
    '<div><div class="t">Owed</div><div class="v'+(o.owed>0.009?' neg':'')+'">'+usdc(o.owed)+'</div></div></div>'+
@@ -2621,7 +2687,11 @@ function oneTeamHtml(){
    (drift?'<div class="s">'+esc(drift)+'</div>':'')+'</span></div>'+
   (pot>0.009?'<div class="kv"><span>Share of all commission</span><span class="r"><b>'+
    Math.round(o.earned/pot*100)+'%</b><div class="s">of '+usdc(pot)+'</div></span></div>':'')+
-  '<div class="kv"><span>Last 6 '+perNoun()+'s</span><span class="r">'+spark(ser)+'</span></div>'+
+  '<div class="kv"><span>Last 6 '+perNoun()+'s</span><span class="r">'+spark(ser)+'</span></div>':'')+
+  (o.tipped>0.009?'<div class="kv"'+(hasCom?' style="margin-top:12px"':'')+'><span>Paid directly'+
+   '<div class="s">'+o.tips.length+(o.tips.length===1?' payment':' payments')+
+   ' outside commission \u2014 settles nothing, owes nothing</div></span>'+
+   '<span class="r"><b class="neg">'+usdc(o.tipped)+'</b></span></div>':'')+
   '<div class="wrapb" style="margin-top:12px"><button class="bs" data-tcopy="'+esc(k)+'">Copy statement</button>'+
    (o.owed>0.009?'<button class="bs" data-payall="'+esc(k)+'">Mark all paid</button>':'')+'</div></div>'+
   (o.deals.length?'<div class="sec"><h3>Every deal</h3>'+o.deals.map(function(d){
@@ -2633,7 +2703,15 @@ function oneTeamHtml(){
   (o.pays.length?'<div class="sec"><h3>Paid out</h3>'+o.pays.map(function(t){
    return'<div class="kv"><span>'+esc(dmy(t.date))+(t.note?'<div class="s">'+esc(t.note)+'</div>':'')+
     '</span><b class="neg">'+usdc(num(t.usd))+'</b></div>';
-  }).join('')+'</div>':'');
+  }).join('')+'</div>':'')+
+  (o.tips.length?'<div class="sec"><h3>Paid directly</h3>'+
+   '<p class="tiny" style="margin-top:0">Tips, bonuses and blue ticks \u2014 money sent on the day it says, '+
+   'outside the commission book above.</p>'+
+   o.tips.map(function(t){
+    return'<div class="kv"><span>'+esc(dmy(t.date))+'<div class="s">'+cmeta(t.cat)[0]+' '+esc(t.cat)+
+     (t.note?' \u00b7 '+esc(t.note):'')+'</div></span><b class="neg">'+usdc(num(t.usd))+'</b></div>';
+   }).join('')+
+   '<div class="kv"><span><b>Total paid directly</b></span><b class="neg">'+usdc(o.tipped)+'</b></div></div>':'');
 }
 /* An unpaid deal is a quotation; once money has moved it is an invoice.
    Everything below is read off the entry — nothing extra is saved on it. */
