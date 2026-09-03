@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-03-3">
+<meta name="cashfra-build" content="2026-09-03-4">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -796,7 +796,7 @@ var DEF={v:3,tx:[],
 };
 var S=clone(DEF);
 var anchor=new Date(), flt='', editId=null, fType='in', fTokV='SOL', fChainV='SOL', fBrandV='', brandView='', formPkg='', panel='menu', undoBuf=null;
-var mixAll=false, ratePrefill='', rateBusy=false, hidAt=0, autoLocked=false, costOf='spend', cliOpen='', teamOpen='', shillOpen='';
+var mixAll=false, ratePrefill='', rateBusy=false, hidAt=0, autoLocked=false, costOf='spend', cliOpen='', teamOpen='', shillOpen='', shillAll=false;
 var syncBusy=false, syncMsg='', syncT=null, syncSaving=false;
 
 function clone(o){return JSON.parse(JSON.stringify(o));}
@@ -2866,40 +2866,79 @@ function contactLinks(v){
    deserves its own screen. All time, like Clients, because a shiller's record
    is not a month — and ranked by revenue received, not booked: a deal that
    never landed brought nothing in. */
-function shillRows(){
+/* The stretch the panel is looking at: the period the rest of the app is on,
+   or everything. Week and month come from the app's one period (rule 7), so
+   switching them here switches the hero too rather than inventing a second
+   idea of "this week". */
+function shillScope(){
+ return shillAll?S.tx.filter(inScope):periodTx(0);
+}
+function shillRows(L){
  var per={};
- S.tx.forEach(function(t){
+ (L||shillScope()).forEach(function(t){
   if(!inScope(t)||t.type!=='in')return;
   var k=broughtBy(t);if(!k)return;
   var low=k.toLowerCase();
-  if(!per[low])per[low]={name:k,d:0,v:0,r:0,c:0,last:'',guessed:0};
+  if(!per[low])per[low]={name:k,d:0,v:0,r:0,c:0,first:'',last:'',guessed:0};
   var o=per[low];
   o.d++;o.v+=num(t.usd);o.r+=recv(t);o.c+=comv(t);
   if(byInferred(t))o.guessed++;
   if(t.date>o.last)o.last=t.date;
+  if(!o.first||t.date<o.first)o.first=t.date;
  });
  return Object.keys(per).map(function(k){return per[k];})
   .sort(function(a,b){return b.r-a.r;});
 }
+/* "28 Aug 26" for one day, "28 Aug 26 – 3 Sep 26" for a stretch. The dates
+   are the point of this screen, so they are spelled out, not implied. */
+function dSpan(a,b){
+ if(a===b)return dmy(a);
+ /* inside one month, name it once: "1\u201330 Sep 26", not "1 Sep 26 \u2013 30 Sep 26" */
+ if(a.slice(0,7)===b.slice(0,7))return String(+a.slice(8))+'\u2013'+dmy(b);
+ return dmy(a)+' \u2013 '+dmy(b);
+}
+/* What the panel is showing, said in dates rather than left to be guessed. */
+function shillWhen(){
+ if(shillAll){
+  var lo='',hi='';
+  S.tx.forEach(function(t){
+   if(!inScope(t)||t.type!=='in')return;
+   if(!lo||t.date<lo)lo=t.date;
+   if(t.date>hi)hi=t.date;
+  });
+  return lo?'All time \u00b7 '+dSpan(lo,hi):'All time';
+ }
+ var r=perRange(0),e=new Date(r[1].getFullYear(),r[1].getMonth(),r[1].getDate()-1);
+ var span=dSpan(iso(r[0]),iso(e));
+ /* a week's label already *is* its dates — saying them twice reads as a bug */
+ return per==='m'?(perLabel(0)+' \u00b7 '+span):span;
+}
 function shillHtml(){
- var rows=shillRows();
+ var L=shillScope(),rows=shillRows(L);
  var unattr=0,unv=0;
- S.tx.forEach(function(t){
+ L.forEach(function(t){
   if(!inScope(t)||t.type!=='in')return;
   if(!broughtBy(t)){unattr++;unv+=recv(t);}
  });
+ var seg='<div class="mseg"><button data-sper="w"'+(!shillAll&&per==='w'?' class="on"':'')+'>Weekly</button>'+
+  '<button data-sper="m"'+(!shillAll&&per==='m'?' class="on"':'')+'>Monthly</button>'+
+  '<button data-sper="all"'+(shillAll?' class="on"':'')+'>All time</button></div>'+
+  '<p class="tiny" style="margin:6px 0 0"><b>'+esc(shillWhen())+'</b></p>';
  if(!rows.length)
-  return'<p class="tiny" style="padding:10px 0 20px">Nobody is credited with a listing yet. '+
-   'Fill in <b>Added by</b> when you log money in \u2014 that is the whole of it, and this fills itself.</p>';
+  return seg+'<p class="tiny" style="padding:10px 0 20px">'+
+   (S.tx.some(function(t){return inScope(t)&&t.type==='in'&&broughtBy(t);})
+    ?'Nobody brought a listing in this stretch. Try <b>All time</b>, or step the period with \u2039 \u203a on the hero.'
+    :'Nobody is credited with a listing yet. Fill in <b>Added by</b> when you log money in \u2014 that is the whole of it, and this fills itself.')+'</p>';
  var tot=0,deals=0,guessed=0;
  rows.forEach(function(o){tot+=o.r;deals+=o.d;guessed+=o.guessed;});
- return'<p class="tiny" style="margin-top:4px">'+rows.length+(rows.length===1?' person':' people')+
+ return seg+
+  '<p class="tiny">'+rows.length+(rows.length===1?' person':' people')+
   ' \u00b7 '+deals+(deals===1?' listing':' listings')+' \u00b7 '+usdc(tot)+' brought in \u00b7 ranked by money received</p>'+
   '<div class="sec">'+rows.map(function(o){
    var share=tot>0.009?Math.round(o.r/tot*100):0;
    return'<button class="kv" data-shill="'+esc(o.name)+'"><span>'+esc(o.name)+
-    '<div class="s">'+o.d+(o.d===1?' listing':' listings')+' \u00b7 avg '+usdc(o.r/o.d)+
-    ' \u00b7 last '+dmy(o.last)+'</div></span>'+
+    '<div class="s">'+o.d+(o.d===1?' listing':' listings')+' \u00b7 '+esc(dSpan(o.first,o.last))+
+    ' \u00b7 avg '+usdc(o.r/o.d)+'</div></span>'+
     '<span class="r"><b>'+usdc(o.r)+'</b><div class="s">'+share+'% of the pot'+
     (o.c>0.009?' \u00b7 fee '+usdc(o.c):'')+'</div></span></button>';
   }).join('')+'</div>'+
@@ -2911,9 +2950,10 @@ function shillHtml(){
 }
 function oneShillHtml(){
  var k=shillOpen,n=k.toLowerCase();
- var L=S.tx.filter(function(t){return inScope(t)&&t.type==='in'&&broughtBy(t).toLowerCase()===n;})
+ var L=shillScope().filter(function(t){return inScope(t)&&t.type==='in'&&broughtBy(t).toLowerCase()===n;})
    .sort(function(a,b){return b.date.localeCompare(a.date);});
- if(!L.length)return'<p class="tiny">Nothing for '+esc(k)+' in '+esc(brandView||'any brand')+'.</p>';
+ if(!L.length)return'<p class="tiny">Nothing for '+esc(k)+' in '+esc(shillWhen())+'.</p>';
+ var span='<p class="tiny" style="margin:4px 0 0"><b>'+esc(shillWhen())+'</b></p>';
  var v=0,r=0,c=0,i;
  L.forEach(function(t){v+=num(t.usd);r+=recv(t);c+=comv(t);});
  /* six periods of what they brought in — a shiller going quiet shows here first */
@@ -2926,7 +2966,7 @@ function oneShillHtml(){
  var pk={};
  L.forEach(function(t){var g=t.pkg||t.cat||'\u2014';pk[g]=(pk[g]||0)+recv(t);});
  var pkl=Object.keys(pk).sort(function(a,b){return pk[b]-pk[a];});
- return'<div class="sec"><div class="tot3">'+
+ return span+'<div class="sec"><div class="tot3">'+
    '<div><div class="t">Brought in</div><div class="v">'+usdc(r)+'</div></div>'+
    '<div><div class="t">Listings</div><div class="v">'+L.length+'</div></div>'+
    '<div><div class="t">Avg deal</div><div class="v">'+usdc(r/L.length)+'</div></div></div>'+
@@ -3109,7 +3149,7 @@ function dataHtml(){
 
 /* global events */
 document.addEventListener('click',function(e){
- var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-seed],[data-mix],[data-cshare],[data-rate],[data-sync],[data-cli],[data-team],[data-shill],[data-tcopy],[data-lock]');
+ var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-seed],[data-mix],[data-sper],[data-cshare],[data-rate],[data-sync],[data-cli],[data-team],[data-shill],[data-tcopy],[data-lock]');
  if(!el)return;
  var d=el.dataset;
  if(d.lock!==undefined){
@@ -3131,6 +3171,19 @@ document.addEventListener('click',function(e){
   return;
  }
  if(d.mix!==undefined){mixAll=(d.mix==='all');repaint();return;}
+ if(d.sper!==undefined){
+  if(d.sper==='all')shillAll=true;
+  else{
+   shillAll=false;
+   if(per!==d.sper){
+    /* the same three lines the hero's own M/W does — S.per is what survives a
+       reload, and the hero's buttons carry their own .on state */
+    per=d.sper;S.per=per;save();
+    $$('.hper button').forEach(function(x){x.classList.toggle('on',x.dataset.per===per);});
+   }
+  }
+  render();repaint();return;   /* the hero shares the period, so it repaints too */
+ }
  if(d.cshare!==undefined){costOf=d.cshare;repaint();return;}
  if(d.sync!==undefined){
   if(syncCfg().none){syncCfg().none=0;save();}      /* asked by hand: try again */
