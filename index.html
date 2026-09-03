@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-03-1">
+<meta name="cashfra-build" content="2026-09-03-2">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -616,6 +616,10 @@ body.locked{overflow:hidden}
         <datalist id="dlParty"></datalist>
         <div class="hint hide" id="partyHint"></div>
       </div>
+      <div class="fr" id="rBy"><label>Added by &middot; who brought this listing</label>
+        <input id="fBy" list="dlBy" autocomplete="off" placeholder="e.g. Alfa">
+        <datalist id="dlBy"></datalist>
+      </div>
       <div class="two">
         <div class="fr"><label>Date</label><input type="date" id="fDate"></div>
         <div class="fr"><label>Category</label><select id="fCat"></select></div>
@@ -790,7 +794,7 @@ var DEF={v:3,tx:[],
 };
 var S=clone(DEF);
 var anchor=new Date(), flt='', editId=null, fType='in', fTokV='SOL', fChainV='SOL', fBrandV='', brandView='', formPkg='', panel='menu', undoBuf=null;
-var mixAll=false, ratePrefill='', rateBusy=false, hidAt=0, autoLocked=false, costOf='spend', cliOpen='', teamOpen='';
+var mixAll=false, ratePrefill='', rateBusy=false, hidAt=0, autoLocked=false, costOf='spend', cliOpen='', teamOpen='', shillOpen='';
 var syncBusy=false, syncMsg='', syncT=null, syncSaving=false;
 
 function clone(o){return JSON.parse(JSON.stringify(o));}
@@ -1389,6 +1393,7 @@ function fillStatic(){
  S.team.forEach(function(t){if(t[0]&&!seen[t[0]]){seen[t[0]]=1;names.push(t[0]);}});
  S.tx.forEach(function(t){if(t.party&&!seen[t.party]){seen[t.party]=1;names.push(t.party);}});
  $('#dlParty').innerHTML=names.slice(0,150).map(function(v){return'<option value="'+esc(v)+'">';}).join('');
+ $('#dlBy').innerHTML=shillTeam().map(function(v){return'<option value="'+esc(v)+'">';}).join('');
  $('#toks').innerHTML=S.rates.filter(function(r){return r[0];}).map(function(r){
   return'<button type="button" class="tk" data-tok="'+esc(r[0])+'">'+esc(r[0])+'</button>';}).join('');
  $('#chainPick').innerHTML=S.chains.map(function(c){
@@ -1938,6 +1943,7 @@ function setType(){
  $('#rChain').classList.toggle('hide',!inc);
  $('#rStat').classList.toggle('hide',!inc);
  $('#rComs').classList.toggle('hide',!inc);
+ $('#rBy').classList.toggle('hide',!inc);
  $('#lParty').textContent=inc?'Received from':'Paid to';
  $('#fParty').placeholder=inc?'e.g. $PEPU':'e.g. SMMStone';
  presets();syncPre();togglePct();syncBrandPick();
@@ -1966,6 +1972,7 @@ function openForm(t){
  syncTok();syncChain();
  $('#fDate').value=t?t.date:defDate();
  $('#fParty').value=t?(t.party||''):'';
+ $('#fBy').value=t?(t.by||''):'';
  $('#fRate').value=t?(t.rate||''):'';
  $('#fAmt').value=t?(t.amt||''):'';
  fComs=t?(t.coms||[]).map(function(c){
@@ -2006,6 +2013,7 @@ function commit(){
   coms:inc?(syncComUsd(),fComs).filter(function(c){return (c.to&&String(c.to).trim())||num(c.pct)>0;}).map(function(c){
    return{to:String(c.to||'').trim(),pct:+num(c.pct).toFixed(2),usd:+num(c.usd).toFixed(2),paid:!!c.paid};
   }):[],
+  by:inc?$('#fBy').value.trim():'',
   link:$('#fLink').value.trim(),hash:$('#fHash').value.trim(),
   note:$('#fNote').value.trim(),recur:$('#fRecur').checked,mt:Date.now()};
  if(editId){
@@ -2128,11 +2136,12 @@ $('#fAgain').onclick=function(){
 };
 
 /* panel */
-var TITLES={menu:'Menu',com:'Commission',ins:'Insights',cli:'Clients',set:'Settings',data:'Your data'};
+var TITLES={menu:'Menu',com:'Commission',ins:'Insights',cli:'Clients',shill:'Shill team',set:'Settings',data:'Your data'};
 function openPanel(w){
  panel=w||'menu';
  if(panel!=='cli')cliOpen='';
  if(panel!=='com')teamOpen='';
+ if(panel!=='shill')shillOpen='';
  $('#pTitle').textContent=TITLES[panel];
  $('#pBack').classList.toggle('hide',panel==='menu');
  $('#pBody').innerHTML=panelHtml();
@@ -2143,6 +2152,7 @@ function panelHtml(){
  if(panel==='com')return teamOpen?oneTeamHtml():comHtml();
  if(panel==='ins')return insHtml();
  if(panel==='cli')return cliOpen?oneCliHtml():cliHtml();
+ if(panel==='shill')return shillOpen?oneShillHtml():shillHtml();
  if(panel==='set')return setHtml();
  if(panel==='data')return dataHtml();
  var t=totals(sc(S.tx.filter(inScope),null));
@@ -2154,6 +2164,10 @@ function panelHtml(){
  return'<div style="padding:4px 0 10px">'+
   mi('\ud83d\udcca','#E7F0FF','Insights','Where the money goes','ins')+
   mi('\ud83d\udcb8','var(--amber-soft)','Commission',(t.due?usdc(t.due)+' still owed':'All settled'),'com')+
+  mi('\ud83d\udce3','#FFEFE2','Shill team',(function(){
+   var rs=shillRows(),d=0;rs.forEach(function(o){d+=o.d;});
+   return rs.length?rs.length+(rs.length===1?' person \u00b7 ':' people \u00b7 ')+d+(d===1?' listing':' listings'):'Who brings the listings';
+  })(),'shill')+
   mi('\ud83d\udc64','var(--brand-soft)','Clients',nc+' total','cli')+
   mi('\u2699\ufe0f','#EFEFF4','Settings','Token prices, packages, team','set')+
   mi('\ud83d\uddc2\ufe0f','#E2F6F2','Your data',S.tx.length+' entries \u00b7 CSV \u00b7 backup','data')+
@@ -2619,6 +2633,32 @@ function teamRows(k){
   touched:touched,owed:Math.max(0,earned-credit),
   rate:touched>0.009?earned/touched*100:0};
 }
+/* Who brought the listing. The field is the truth; before it existed the only
+   person attached to a deal was whoever earned commission on it, and in ALFA's
+   book that is the same person — the shiller who brought it. One recipient is
+   unambiguous, so it is used; two or more would be a guess, so those stay
+   unattributed rather than credited to the wrong name. */
+function broughtBy(t){
+ var v=String(t.by||'').trim();
+ if(v)return v;
+ var c=(t.coms||[]).filter(function(x){return String(x.to||'').trim()&&num(x.usd)>0;});
+ return c.length===1?String(c[0].to).trim():'';
+}
+function byInferred(t){return !String(t.by||'').trim();}
+/* Every name that has ever brought something in, plus the team roster. */
+function shillTeam(){
+ var seen={},order=[];
+ (S.team||[]).forEach(function(r){
+  var k=String(r[0]||'').trim();if(!k)return;
+  if(!seen[k.toLowerCase()]){seen[k.toLowerCase()]=k;order.push(k);}
+ });
+ S.tx.forEach(function(t){
+  if(t.type!=='in')return;
+  var k=String(t.by||'').trim();if(!k)return;
+  if(!seen[k.toLowerCase()]){seen[k.toLowerCase()]=k;order.push(k);}
+ });
+ return order;
+}
 function teamDefault(k){
  var n=String(k).trim().toLowerCase(),v=null;
  (S.team||[]).forEach(function(r){if(String(r[0]||'').trim().toLowerCase()===n)v=num(r[1]);});
@@ -2802,6 +2842,95 @@ function contactLinks(v){
  return'<a href="https://t.me/'+esc(h)+'" target="_blank" rel="noopener" class="clnk">Telegram ↗</a>'+
   '<a href="https://x.com/'+esc(h)+'" target="_blank" rel="noopener" class="clnk">X ↗</a>';
 }
+/* Who brings the work in. Commission answers "what do I owe them"; this
+   answers "who is actually producing", which is a different question and
+   deserves its own screen. All time, like Clients, because a shiller's record
+   is not a month — and ranked by revenue received, not booked: a deal that
+   never landed brought nothing in. */
+function shillRows(){
+ var per={};
+ S.tx.forEach(function(t){
+  if(!inScope(t)||t.type!=='in')return;
+  var k=broughtBy(t);if(!k)return;
+  var low=k.toLowerCase();
+  if(!per[low])per[low]={name:k,d:0,v:0,r:0,c:0,last:'',guessed:0};
+  var o=per[low];
+  o.d++;o.v+=num(t.usd);o.r+=recv(t);o.c+=comv(t);
+  if(byInferred(t))o.guessed++;
+  if(t.date>o.last)o.last=t.date;
+ });
+ return Object.keys(per).map(function(k){return per[k];})
+  .sort(function(a,b){return b.r-a.r;});
+}
+function shillHtml(){
+ var rows=shillRows();
+ var unattr=0,unv=0;
+ S.tx.forEach(function(t){
+  if(!inScope(t)||t.type!=='in')return;
+  if(!broughtBy(t)){unattr++;unv+=recv(t);}
+ });
+ if(!rows.length)
+  return'<p class="tiny" style="padding:10px 0 20px">Nobody is credited with a listing yet. '+
+   'Fill in <b>Added by</b> when you log money in \u2014 that is the whole of it, and this fills itself.</p>';
+ var tot=0,deals=0,guessed=0;
+ rows.forEach(function(o){tot+=o.r;deals+=o.d;guessed+=o.guessed;});
+ return'<p class="tiny" style="margin-top:4px">'+rows.length+(rows.length===1?' person':' people')+
+  ' \u00b7 '+deals+(deals===1?' listing':' listings')+' \u00b7 '+usdc(tot)+' brought in \u00b7 ranked by money received</p>'+
+  '<div class="sec">'+rows.map(function(o){
+   var share=tot>0.009?Math.round(o.r/tot*100):0;
+   return'<button class="kv" data-shill="'+esc(o.name)+'"><span>'+esc(o.name)+
+    '<div class="s">'+o.d+(o.d===1?' listing':' listings')+' \u00b7 avg '+usdc(o.r/o.d)+
+    ' \u00b7 last '+dmy(o.last)+'</div></span>'+
+    '<span class="r"><b>'+usdc(o.r)+'</b><div class="s">'+share+'% of the pot'+
+    (o.c>0.009?' \u00b7 fee '+usdc(o.c):'')+'</div></span></button>';
+  }).join('')+'</div>'+
+  (guessed?'<p class="tiny">'+guessed+(guessed===1?' listing is':' listings are')+
+   ' credited from their commission line, because <b>Added by</b> was empty. Open the entry and set it to be sure.</p>':'')+
+  (unattr?'<div class="sec"><h3>Not credited to anyone</h3><div class="kv"><span>'+unattr+
+   (unattr===1?' listing':' listings')+'<div class="s">no Added by, and no single commission line to infer it from</div></span>'+
+   '<b>'+usdc(unv)+'</b></div></div>':'');
+}
+function oneShillHtml(){
+ var k=shillOpen,n=k.toLowerCase();
+ var L=S.tx.filter(function(t){return inScope(t)&&t.type==='in'&&broughtBy(t).toLowerCase()===n;})
+   .sort(function(a,b){return b.date.localeCompare(a.date);});
+ if(!L.length)return'<p class="tiny">Nothing for '+esc(k)+' in '+esc(brandView||'any brand')+'.</p>';
+ var v=0,r=0,c=0,i;
+ L.forEach(function(t){v+=num(t.usd);r+=recv(t);c+=comv(t);});
+ /* six periods of what they brought in — a shiller going quiet shows here first */
+ var ser=[],rr;
+ for(i=5;i>=0;i--){
+  rr=perRange(-i);var x=0;
+  L.forEach(function(t){if(inRange(t,rr))x+=recv(t);});
+  ser.push(x);
+ }
+ var pk={};
+ L.forEach(function(t){var g=t.pkg||t.cat||'\u2014';pk[g]=(pk[g]||0)+recv(t);});
+ var pkl=Object.keys(pk).sort(function(a,b){return pk[b]-pk[a];});
+ return'<div class="sec"><div class="tot3">'+
+   '<div><div class="t">Brought in</div><div class="v">'+usdc(r)+'</div></div>'+
+   '<div><div class="t">Listings</div><div class="v">'+L.length+'</div></div>'+
+   '<div><div class="t">Avg deal</div><div class="v">'+usdc(r/L.length)+'</div></div></div>'+
+  '<div class="kv" style="margin-top:12px"><span>Booked<div class="s">'+
+   (v-r>0.009?usdc(v-r)+' of it has not landed yet':'all of it landed')+'</div></span>'+
+   '<span class="r"><b>'+usdc(v)+'</b></span></div>'+
+  '<div class="kv"><span>Commission on their deals<div class="s">'+
+   (r>0.009?Math.round(c/r*100)+'% of what they brought in':'nothing received yet')+
+   '</div></span><span class="r"><b class="neg">'+usdc(c)+'</b></span></div>'+
+  '<div class="kv"><span>Kept after their fee</span><span class="r"><b>'+usdc(r-c)+'</b></span></div>'+
+  '<div class="kv"><span>Last 6 '+perNoun()+'s</span><span class="r">'+spark(ser)+'</span></div></div>'+
+  (pkl.length>1?'<div class="sec"><h3>What they sell</h3>'+pkl.map(function(g){
+   return'<div class="kv"><span>'+esc(g)+'</span><span class="r">'+usdc(pk[g])+
+    '<div class="s">'+Math.round(pk[g]/r*100)+'%</div></span></div>';
+  }).join('')+'</div>':'')+
+  '<div class="sec"><h3>Every listing</h3>'+L.map(function(t){
+   return'<button class="kv" data-ed="'+t.id+'"><span>'+esc(t.party||'-')+
+    '<div class="s">'+esc(dmy(t.date))+' \u00b7 '+esc(t.pkg||t.cat||'\u2014')+
+    (byInferred(t)?' \u00b7 from commission':'')+'</div></span>'+
+    '<span class="r"><b class="pos">'+usdc(recv(t))+'</b>'+
+    (comv(t)>0.009?'<div class="s">fee '+usdc(comv(t))+'</div>':'')+'</span></button>';
+  }).join('')+'</div>';
+}
 function cliHtml(){
  var per={};
  S.tx.filter(function(t){return inScope(t)&&t.type==='in'&&t.party;}).forEach(function(t){
@@ -2961,7 +3090,7 @@ function dataHtml(){
 
 /* global events */
 document.addEventListener('click',function(e){
- var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-seed],[data-mix],[data-cshare],[data-rate],[data-sync],[data-cli],[data-team],[data-tcopy],[data-lock]');
+ var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-seed],[data-mix],[data-cshare],[data-rate],[data-sync],[data-cli],[data-team],[data-shill],[data-tcopy],[data-lock]');
  if(!el)return;
  var d=el.dataset;
  if(d.lock!==undefined){
@@ -2977,6 +3106,7 @@ document.addEventListener('click',function(e){
  }
  if(d.cli!==undefined){cliOpen=d.cli;$('#pTitle').textContent=d.cli;$('#pBack').classList.remove('hide');repaint();return;}
  if(d.team!==undefined){teamOpen=d.team;$('#pTitle').textContent=d.team;$('#pBack').classList.remove('hide');repaint();return;}
+ if(d.shill!==undefined){shillOpen=d.shill;$('#pTitle').textContent=d.shill;$('#pBack').classList.remove('hide');repaint();return;}
  if(d.tcopy!==undefined){
   copyText(teamText(d.tcopy)).then(function(okc){toast(okc?'Statement copied \u2014 paste it to them':'Could not copy');});
   return;
@@ -3140,6 +3270,7 @@ $('#moreBtn').onclick=function(){openPanel('menu');};
 $('#pBack').onclick=function(){
  if(panel==='cli'&&cliOpen){cliOpen='';openPanel('cli');return;}   /* back to the list first */
  if(panel==='com'&&teamOpen){teamOpen='';openPanel('com');return;}
+ if(panel==='shill'&&shillOpen){shillOpen='';openPanel('shill');return;}
  openPanel('menu');
 };
 $('#pX').onclick=function(){$('#ovPanel').classList.remove('on');};
@@ -3288,11 +3419,11 @@ function dl(name,c,type,okMsg){
  if(okMsg)toast(okMsg);
 }
 function csv(all){
- var H=['Date','Brand','Type','Category','Package','Chain','Party','Amount','Token','USD rate','USD value','Received USD','Status','Commission to','Commission USD','Commission paid','Announce link','Tx hash','Recurring','Note'];
+ var H=['Date','Brand','Type','Category','Package','Chain','Party','Added by','Amount','Token','USD rate','USD value','Received USD','Status','Commission to','Commission USD','Commission paid','Announce link','Tx hash','Recurring','Note'];
  function q(v){return'"'+String(v==null?'':v).replace(/"/g,'""')+'"';}
  var src=(all?sc(S.tx.filter(inScope),null):monthOnlyTx()).sort(function(a,b){return a.date.localeCompare(b.date);});
  var rows=src.map(function(t){
-  return[t.date,t.brand===SHARED?'Shared':(t.brand||''),t.type==='in'?'Money in':'Money out',t.cat,t.pkg,t.chain,t.party,t.amt,t.tok,t.rate,t.usd,recv(t),
+  return[t.date,t.brand===SHARED?'Shared':(t.brand||''),t.type==='in'?'Money in':'Money out',t.cat,t.pkg,t.chain,t.party,t.type==='in'?broughtBy(t):'',t.amt,t.tok,t.rate,t.usd,recv(t),
    t.type==='in'?STL[t.status||'paid']:'',
    (t.coms||[]).map(function(c){return c.to+(c.pct?' '+c.pct+'%':'');}).join('; '),
    comv(t)||'',
