@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-03-2">
+<meta name="cashfra-build" content="2026-09-03-3">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -87,7 +87,7 @@ button,label.sw,.row,.gk{cursor:pointer;-webkit-tap-highlight-color:transparent;
 .hb i{display:block;width:100%;border-radius:3px;min-height:4px;background:rgba(255,255,255,.32);transition:height .45s cubic-bezier(.2,.85,.25,1)}
 .hb:hover i{background:rgba(255,255,255,.55)}
 .hb.on i{background:#fff}
-.hchips{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.hchips{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .hc{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.18);border-radius:15px;padding:9px 8px;text-align:center;color:#fff;transition:background .15s}
 .hc:hover{background:rgba(255,255,255,.22)}
 .hc.on{background:rgba(255,255,255,.92);color:var(--brand-ink)}
@@ -538,6 +538,7 @@ body.locked{overflow:hidden}
   @keyframes up{from{transform:translateY(30px)}}
   .grab{display:block}
   .two{grid-template-columns:1fr}
+  .hchips{grid-template-columns:repeat(2,1fr)}
   .toast{left:14px;right:14px;transform:translateY(20px);max-width:none}
   .toast.on{transform:translateY(0)}
   .row+.row::before{left:66px}
@@ -570,6 +571,7 @@ body.locked{overflow:hidden}
       <button class="hc" data-flt="in"><div class="t">Money in</div><div class="v" id="vIn">$0</div><div class="d" id="dIn"></div></button>
       <button class="hc" data-flt="out"><div class="t">Money out</div><div class="v" id="vOut">$0</div><div class="d" id="dOut"></div></button>
       <button class="hc" data-panel="com"><div class="t">Commission</div><div class="v" id="vCom">$0</div><div class="d" id="dCom"></div></button>
+      <button class="hc" data-panel="shill"><div class="t">Shill team</div><div class="v" id="vShill">$0</div><div class="d" id="dShill"></div></button>
     </div>
   </section>
 
@@ -1136,6 +1138,23 @@ function render(){
  $('#vIn').textContent=usdc(T.gi);
  $('#vOut').textContent=usdc(T.go);
  $('#vCom').textContent=usdc(T.gc);
+ var sh=0,shn=0,shTop='',shTopV=0,shBy={};
+ P.forEach(function(t){
+  if(t.type!=='in')return;
+  var k=broughtBy(t);if(!k)return;
+  var v=recv(t);sh+=v;shn++;
+  shBy[k]=(shBy[k]||0)+v;
+ });
+ /* -1, not 0: a shiller whose only listing has not landed yet still has a
+    name worth showing, and 0 > 0 is false */
+ shTopV=-1;
+ Object.keys(shBy).forEach(function(k){if(shBy[k]>shTopV){shTopV=shBy[k];shTop=k;}});
+ $('#vShill').textContent=shn?usdc(sh):'\u2014';
+ /* say which of the three cases it is, rather than leaving $0.00 unexplained */
+ $('#dShill').textContent=!shn?'nobody credited'
+  :(sh>0.009?(shTop+(Object.keys(shBy).length>1?' leads':''))
+   :(shn+(shn===1?' credited, not landed':' credited, none landed')));
+ $('#dShill').className='d';
  var r1=deltaTxt(T.gi,Tp.gi,hasPrev,true);
  var r2=deltaTxt(T.go,Tp.go,hasPrev,false);
  var r3=deltaTxt(T.gc,Tp.gc,hasPrev,false);
