@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-03-5">
+<meta name="cashfra-build" content="2026-09-06-1">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -730,7 +730,7 @@ function $$(s){return Array.prototype.slice.call(document.querySelectorAll(s));}
 
 var CATS={
  "in":['Listing','Xpress listing','Trending','Banner ads','Broadcast','Partnership','Other'],
- "out":['Team bonus','Team commission','Community prize','TG views bot','Blue-tick shiller','Tip shiller','SMMStone','X API','X blue tick','MongoDB','Cashout','Other']
+ "out":['Team bonus','Team commission','Community prize','TG views bot','Blue-tick shiller','Tip shiller','SMMStone','X API','X blue tick','Premium team','Buy account X','MongoDB','Cashout','Other']
 };
 var CMETA={
  'Listing':['\ud83d\ude80','#EFECFF'],
@@ -748,6 +748,8 @@ var CMETA={
  'SMMStone':['\ud83d\udc41\ufe0f','#E2F6F2'],
  'X API':['\ud835\udd4f','#E7F0FF'],
  'X blue tick':['\u2611\ufe0f','#E7F0FF'],
+ 'Premium team':['\u2b50','#E7F0FF'],
+ 'Buy account X':['\ud83d\uded2','#E7F0FF'],
  'MongoDB':['\ud83c\udf43','#E7F7EE'],
  'Cashout':['\ud83c\udfe7','#EFEFF4'],
  'Bot views':['\ud83e\udd16','#E7F0FF'],
@@ -934,7 +936,7 @@ var NOT_SHARED=['Team commission'];
    beside it instead, which is the whole point: one page per shiller, every
    date and every amount, however it reached them. Matched on the party name,
    the same way Team commission payouts already are. */
-var SHILL_PAY=['Tip shiller','Blue-tick shiller','Team bonus'];
+var SHILL_PAY=['Tip shiller','Blue-tick shiller','Team bonus','Premium team'];
 function shillPays(k){
  var n=String(k).trim().toLowerCase(),out=[];
  S.tx.forEach(function(t){
