@@ -151,6 +151,78 @@ check(near(kept, theirIn - theirFee - theirDirect),
       `and the figure is right: ${kept} (${theirIn.toFixed(2)} in − ${theirFee.toFixed(2)} fee − ${theirDirect.toFixed(2)} direct)`);
 check(theirFee > 0.009 && kept < theirIn, `it really is net of something (fee ${theirFee.toFixed(2)})`);
 
+// ══ 6. two people on one listing ═════════════════════════════════════════
+/* One deal brought by two is still one deal and one sum of money. Handing it
+   to each of them in full is the failure this splits to avoid: the board then
+   adds up to more money than ever came in, and "% of the pot" is nonsense. */
+const patch = async o => {
+  await page.evaluate(p => {
+    const L = JSON.parse(localStorage.getItem('fourtis:ledger:v3'));
+    Object.assign(L, p);
+    localStorage.setItem('fourtis:ledger:v3', JSON.stringify(L));
+  }, o);
+  await page.reload({ waitUntil: 'load' });
+  await unlock();
+  await page.waitForTimeout(400);
+};
+const day = new Date().toISOString().slice(0, 10);
+const pair = {
+  id: 'pairdeal', brand, date: day, type: 'in', cat: 'Listing', pkg: 'Listing', chain: 'SOL',
+  party: '$SPLIT', by: 'Michael, Shiller 1', amt: 1, tok: 'USDT', rate: 200, usd: 200,
+  status: 'paid', paid: 200, mt: Date.now(),
+  coms: [{ to: 'Michael', pct: 15, usd: 30, paid: false }, { to: 'Shiller 1', pct: 5, usd: 10, paid: false }]
+};
+await patch({ tx: [...S.tx, pair] });
+await openShill();
+await page.click('#pBody [data-sper="d"]'); await page.waitForTimeout(300);
+const splitTxt = await page.locator('#pBody').innerText();
+const rowOf = who => {
+  const m = new RegExp(who.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\n([^\\n]*)\\n(-?\\$[\\d,.]+)').exec(splitTxt);
+  return m ? { sub: m[1], amt: money(m[2]) } : null;
+};
+const mi = rowOf('Michael'), s1 = rowOf('Shiller 1');
+check(!!mi && !!s1, `both names are on the board for one listing (${mi ? mi.amt : '?'} / ${s1 ? s1.amt : '?'})`);
+check(mi && s1 && near(mi.amt + s1.amt, 200), `and their shares add back to the deal, not past it: ${mi.amt} + ${s1.amt}`);
+check(mi && near(mi.amt, 150) && near(s1.amt, 50), `split follows the commission, 30:10 not 50:50: ${mi.amt} / ${s1.amt}`);
+check(/1 listing/.test(splitTxt) && !/2 listings/.test(splitTxt), 'one listing is counted once, not once per name');
+check(mi && /shared/.test(mi.sub), `the row says it was shared: "${mi.sub}"`);
+await closePanel();
+
+const actTxt = await page.locator('.row', { hasText: '$SPLIT' }).first().innerText();
+check(/by Michael, Shiller 1/.test(actTxt), `the Activity row names who brought it: "${actTxt.replace(/\n/g, ' · ')}"`);
+check(/fee \$40/.test(actTxt), 'and still shows the fee beside it');
+
+// an even split when there is no commission to weigh them by
+await patch({ tx: [...S.tx, { ...pair, id: 'evendeal', party: '$EVEN', coms: [] }] });
+await openShill();
+await page.click('#pBody [data-sper="d"]'); await page.waitForTimeout(300);
+const evenTxt = await page.locator('#pBody').innerText();
+const em = new RegExp('Michael\\n[^\\n]*\\n(-?\\$[\\d,.]+)').exec(evenTxt);
+check(em && near(money(em[1]), 100), `no commission to weigh them by means an even split: ${em ? em[1] : '?'}`);
+await closePanel();
+
+// ══ 7. Added by fills the commission it implies ══════════════════════════
+/* Naming the shiller and leaving the fee blank was the commonest way for a
+   deal to end up with somebody credited and nothing owed to them. */
+await patch({ tx: S.tx, team: [['Michael', 15], ['Shiller 1', 10], ['keya', 8], ['windy', 7]] });
+await page.click('#addBtn2'); await page.waitForSelector('#ovForm.on'); await page.waitForTimeout(250);
+await page.fill('#fBy', 'keya');
+await page.locator('#fParty').click();               // blur it, the way a thumb would
+await page.waitForTimeout(300);
+check(await page.locator('#acc').evaluate(e => e.open), 'the commission section opens itself, so the fee is seen');
+check(await page.inputValue('#comRows [data-cf="to"]') === 'keya', 'a row is filled in for the person named');
+check(await page.inputValue('#comRows [data-cf="pct"]') === '8', "at the default agreed with them (8%)");
+await page.fill('#fAmt', '100'); await page.fill('#fRate', '1'); await page.waitForTimeout(250);
+check(/8/.test(await page.locator('#comRows .cu').first().textContent()), 'and the USD follows the amount');
+
+// two names in one box is one person to the app — it says so rather than guessing
+await page.fill('#fBy', 'keya windy');
+await page.locator('#fParty').click(); await page.waitForTimeout(300);
+const byHint = (await page.locator('#byHint').textContent()).trim();
+check(await page.locator('#byHint').isVisible() && /keya, windy/.test(byHint),
+      `two names in one box is caught, not split on a guess: "${byHint}"`);
+await page.click('#fX'); await page.waitForTimeout(200);
+
 await browser.close();
 report();
 if (bad.length) process.exit(1);

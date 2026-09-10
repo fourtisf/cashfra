@@ -378,7 +378,7 @@ statement against the ledger — earned, owed, one line per deal, the revenue
 they touched, and their **effective rate** measured against the default agreed
 with them — then copies it as text he can send them.
 
-`shill.mjs` (20 checks) covers the *Shill team* screen, which had none. The card
+`shill.mjs` (33 checks) covers the *Shill team* screen, which had none. The card
 used to count one half of the arrangement: a team that brought in $1,322 and was
 paid $1,500 for it read as $1,322, and nothing on the screen disagreed. So the
 suite computes the month's own arithmetic — rule 6's netted commission, plus the
@@ -390,6 +390,16 @@ Day/Week/Month/All switch moves the cost with the takings rather than only the
 takings. The last of it opens one shiller and checks **Kept after what they
 cost** against the ledger: their commission *and* anything paid to them
 directly, each taken off once.
+
+The rest of it is two people bringing one listing. That is one listing and one
+sum of money, so the suite logs a $200 deal carried by two — commission 30 and
+10 — and checks the board gives them $150 and $50, that the two add back to
+$200 rather than past it, that the header still says *1 listing* and not two,
+and that with no commission to weigh them by the split falls to even. It also
+checks the Activity row names them beside the fee, that typing a shiller into
+**Added by** fills their commission at the default agreed with them and opens
+the section so it is seen, and that two names typed into one box is caught and
+said out loud instead of being split on a guess about spaces.
 
 `update.mjs` (7 checks) ships a second build mid-run and verifies the handover
 described under *Redeploying*.

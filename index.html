@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-10-2">
+<meta name="cashfra-build" content="2026-09-10-3">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -621,8 +621,9 @@ body.locked{overflow:hidden}
         <div class="hint hide" id="partyHint"></div>
       </div>
       <div class="fr" id="rBy"><label>Added by &middot; who brought this listing</label>
-        <input id="fBy" list="dlBy" autocomplete="off" placeholder="e.g. Alfa">
+        <input id="fBy" list="dlBy" autocomplete="off" placeholder="e.g. Alfa &mdash; two of them: Alfa, Keya">
         <datalist id="dlBy"></datalist>
+        <div class="hint hide" id="byHint"></div>
       </div>
       <div class="two">
         <div class="fr"><label>Date</label><input type="date" id="fDate"></div>
@@ -1166,17 +1167,14 @@ function render(){
  $('#vIn').textContent=usdc(T.gi);
  $('#vOut').textContent=usdc(T.go);
  $('#vCom').textContent=usdc(T.gc);
- var sh=0,shn=0,shTop='',shTopV=0,shBy={};
+ /* One listing brought by two people is still one listing and one sum of
+    money: counted once here, and split only where the split is the point —
+    on the leaderboard behind this card. */
+ var sh=0,shn=0;
  P.forEach(function(t){
-  if(t.type!=='in')return;
-  var k=broughtBy(t);if(!k)return;
-  var v=recv(t);sh+=v;shn++;
-  shBy[k]=(shBy[k]||0)+v;
+  if(t.type!=='in'||!broughtAny(t))return;
+  sh+=recv(t);shn++;
  });
- /* -1, not 0: a shiller whose only listing has not landed yet still has a
-    name worth showing, and 0 > 0 is false */
- shTopV=-1;
- Object.keys(shBy).forEach(function(k){if(shBy[k]>shTopV){shTopV=shBy[k];shTop=k;}});
  /* Both halves of the arrangement, not just the flattering one. What they
     brought in on its own says nothing about whether the team pays for itself
     \u2014 the card is the net, and the line under it is the two numbers it came
@@ -1323,6 +1321,11 @@ function row(t){
  var meta=[t.cat];
  if(t.brand===SHARED)meta.unshift(brandView?'shared \u00b7 '+Math.round(num(t.share)*100)+'%':'shared');
  else if(!brandView&&t.brand)meta.unshift(t.brand);
+ /* who brought it, next to what it was — the fee on the right says what they
+    earned, and this says who earned it. Second, so the ellipsis on a narrow
+    phone eats the coin amount before it eats a name. */
+ var by=broughtList(t).map(function(b){return b.name;}).join(', ');
+ if(by)meta.push('by '+by);
  if(inc&&t.chain)meta.push(t.chain);
  meta.push(tokf(num(t.amt))+' '+t.tok);
  if(t.note)meta.push(t.note);
@@ -1584,6 +1587,44 @@ function teamPct(name){
  for(var i=0;i<S.team.length;i++)if(String(S.team[i][0]).trim().toLowerCase()===n)return num(S.team[i][1]);
  return 0;
 }
+/* Naming who brought a listing and then leaving their commission blank was the
+   commonest way for a deal to end up with a shiller and no fee against them.
+   So filling one fills the other, from the default agreed with them in
+   Settings, and opens the section so the number is seen rather than taken on
+   trust. Only ever added, never removed: a row already on screen is the
+   owner's answer, and a typo they are still fixing is not a reason to delete
+   what they typed.
+   `quiet` is for opening a saved entry, where nothing may be written — the
+   hints still run, because that is where a two-people-in-one-name is caught. */
+function byComs(quiet){
+ var names=byNames($('#fBy').value),added=0,missing=[],split='';
+ if(!quiet)names.forEach(function(nm){
+  var low=nm.toLowerCase();
+  if(fComs.some(function(c){return String(c.to||'').trim().toLowerCase()===low;}))return;
+  var p=teamPct(nm);
+  if(!p){missing.push(nm);return;}
+  fComs.push({to:nm,pct:p,usd:0,paid:false});added++;
+ });
+ if(quiet)names.forEach(function(nm){
+  if(!teamPct(nm)&&!fComs.some(function(c){return String(c.to||'').trim().toLowerCase()===nm.toLowerCase();}))missing.push(nm);
+ });
+ /* "keya windy" is one name to the app and two people to ALFA. Splitting on
+    spaces would invent a shiller out of every surname, so say it instead of
+    guessing — but only when both halves are names the team already knows. */
+ if(names.length===1&&/\s/.test(names[0])&&!teamPct(names[0])){
+  var parts=names[0].split(/\s+/);
+  if(parts.length>1&&parts.every(function(x){return teamPct(x);}))split=parts.join(', ');
+ }
+ if(added){renderComs();$('#acc').open=true;}
+ var el=$('#byHint'),msg='';
+ if(split)msg='Two people? Write it <b>'+esc(split)+'</b> — as one name they share one row, and the credit is not split between them.';
+ else if(missing.length)msg=esc(missing.join(' and '))+(missing.length===1?' has':' have')+
+   ' no default % in Settings → Team, so no commission was filled in. Add it under <b>More details</b> if they are owed one.';
+ el.classList.toggle('hide',!msg);
+ el.innerHTML=msg;
+ calc();
+}
+$('#fBy').addEventListener('change',function(){byComs(false);});
 $('#comAdd').onclick=function(){
  fComs.push({to:'',pct:'',usd:'',paid:false});
  renderComs();calc();
@@ -2209,6 +2250,7 @@ function openForm(t){
  $('#fRecur').checked=t?!!t.recur:false;
  $('#fPct').value='';
  $('#acc').open=!!(t&&(comv(t)||(t.status&&t.status!=='paid')||t.note||t.recur||t.hash||t.link));
+ byComs(true);        /* read the Added by field, write nothing to it */
  if(!t)autoRate();
  syncPre();syncBrandPick();togglePct();
  calc();
@@ -2857,16 +2899,56 @@ function teamRows(k){
   touched:touched,owed:Math.max(0,earned-credit),
   rate:touched>0.009?earned/touched*100:0};
 }
-/* Who brought the listing. The field is the truth; before it existed the only
-   person attached to a deal was whoever earned commission on it, and in ALFA's
-   book that is the same person — the shiller who brought it. One recipient is
-   unambiguous, so it is used; two or more would be a guess, so those stay
-   unattributed rather than credited to the wrong name. */
-function broughtBy(t){
- var v=String(t.by||'').trim();
- if(v)return v;
- var c=(t.coms||[]).filter(function(x){return String(x.to||'').trim()&&num(x.usd)>0;});
- return c.length===1?String(c[0].to).trim():'';
+/* Who brought the listing, and how much of it is each of theirs. The field is
+   the truth; before it existed the only person attached to a deal was whoever
+   earned commission on it, and in ALFA's book that is the same person — the
+   shiller who brought it. One recipient is unambiguous, so it is used; two or
+   more would be a guess, so those stay unattributed rather than credited to
+   the wrong name.
+
+   Two people can bring one listing, and two names on one deal are not two
+   deals: the credit is split, never handed to each in full, or the
+   leaderboard adds up to more money than ever came in and "% of the pot"
+   stops meaning anything. The split follows their commission on that deal —
+   the only figure on the entry that already says who did how much — and only
+   when every one of them has some, because a signal covering half the names
+   is not a signal. Otherwise it is even.
+
+   Names are separated by a comma (or +, & or /) and never by a space: "Ana
+   Maria" is one person far more often than two, and guessing wrong there
+   invents a shiller who does not exist. */
+function byNames(s){
+ var out=[];
+ String(s||'').split(/[,+&/]/).forEach(function(x){
+  x=x.trim();
+  if(x&&out.indexOf(x)<0)out.push(x);
+ });
+ return out;
+}
+function broughtList(t){
+ if(t.type!=='in')return[];
+ var names=byNames(t.by),coms=t.coms||[];
+ if(!names.length){
+  var c=coms.filter(function(x){return String(x.to||'').trim()&&num(x.usd)>0;});
+  if(c.length!==1)return[];
+  names=[String(c[0].to).trim()];
+ }
+ var out=names.map(function(n){
+  var low=n.toLowerCase(),cm=0;
+  coms.forEach(function(c){if(String(c.to||'').trim().toLowerCase()===low)cm+=num(c.usd);});
+  return{name:n,com:cm,w:0};
+ });
+ var all=true,sum=0;
+ out.forEach(function(o){if(!(o.com>0))all=false;sum+=o.com;});
+ out.forEach(function(o){o.w=(all&&sum>0)?o.com/sum:1/out.length;});
+ return out;
+}
+function broughtAny(t){return broughtList(t).length>0;}
+/* How much of this listing is theirs — 0 when it is not. */
+function broughtShare(t,name){
+ var n=String(name||'').trim().toLowerCase(),w=0;
+ broughtList(t).forEach(function(b){if(b.name.toLowerCase()===n)w=b.w;});
+ return w;
 }
 function byInferred(t){return !String(t.by||'').trim();}
 /* Every name that has ever brought something in, plus the team roster. */
@@ -3083,14 +3165,18 @@ function shillRows(L){
  var per={};
  (L||shillScope()).forEach(function(t){
   if(!inScope(t)||t.type!=='in')return;
-  var k=broughtBy(t);if(!k)return;
-  var low=k.toLowerCase();
-  if(!per[low])per[low]={name:k,d:0,v:0,r:0,c:0,first:'',last:'',guessed:0};
-  var o=per[low];
-  o.d++;o.v+=num(t.usd);o.r+=recv(t);o.c+=comv(t);
-  if(byInferred(t))o.guessed++;
-  if(t.date>o.last)o.last=t.date;
-  if(!o.first||t.date<o.first)o.first=t.date;
+  broughtList(t).forEach(function(b){
+   var low=b.name.toLowerCase();
+   if(!per[low])per[low]={name:b.name,d:0,v:0,r:0,c:0,first:'',last:'',guessed:0,shared:0};
+   var o=per[low];
+   /* the listing is theirs, the money is their share of it, and the fee is
+      their own line rather than the whole deal's */
+   o.d++;o.v+=num(t.usd)*b.w;o.r+=recv(t)*b.w;o.c+=b.com;
+   if(b.w<0.999)o.shared++;
+   if(byInferred(t))o.guessed++;
+   if(t.date>o.last)o.last=t.date;
+   if(!o.first||t.date<o.first)o.first=t.date;
+  });
  });
  return Object.keys(per).map(function(k){return per[k];})
   .sort(function(a,b){return b.r-a.r;});
@@ -3125,7 +3211,7 @@ function shillHtml(){
  var unattr=0,unv=0;
  L.forEach(function(t){
   if(!inScope(t)||t.type!=='in')return;
-  if(!broughtBy(t)){unattr++;unv+=recv(t);}
+  if(!broughtAny(t)){unattr++;unv+=recv(t);}
  });
  var pl=!shillDay&&!shillAll;
  /* One short word each. Four of the longer labels do not fit a 320px phone —
@@ -3146,14 +3232,17 @@ function shillHtml(){
   :'';
  if(!rows.length)
   return seg+'<p class="tiny" style="padding:10px 0 20px">'+
-   (S.tx.some(function(t){return inScope(t)&&t.type==='in'&&broughtBy(t);})
+   (S.tx.some(function(t){return inScope(t)&&t.type==='in'&&broughtAny(t);})
     ?'Nobody brought a listing in '+esc(shillWhen())+'. Try <b>All time</b>, or step the period with \u2039 \u203a on the hero.'
     :'Nobody is credited with a listing yet. Fill in <b>Added by</b> when you log money in \u2014 that is the whole of it, and this fills itself.')+'</p>'+
    (cost.all>0.009?'<div class="sec"><div class="kv"><span>Paid to the team anyway'+
      '<div class="s">in '+esc(shillWhen())+', with no listing credited to anyone</div></span>'+
      '<span class="r"><b class="neg">'+usdc(cost.all)+'</b></span></div>'+costNote+'</div>':'');
- var tot=0,deals=0,guessed=0;
- rows.forEach(function(o){tot+=o.r;deals+=o.d;guessed+=o.guessed;});
+ var tot=0,deals=0,guessed=0,shared=0;
+ rows.forEach(function(o){tot+=o.r;guessed+=o.guessed;shared+=o.shared;});
+ /* counted off the listings, not off the people: two names on one listing is
+    one listing, however many rows it puts on the board */
+ L.forEach(function(t){if(inScope(t)&&t.type==='in'&&broughtAny(t))deals++;});
  return seg+
   '<div class="sec" style="margin-top:12px"><div class="tot3">'+
    '<div><div class="t">Brought in</div><div class="v">'+usdc(tot)+'</div></div>'+
@@ -3165,7 +3254,8 @@ function shillHtml(){
   '<div class="sec">'+rows.map(function(o){
    var share=tot>0.009?Math.round(o.r/tot*100):0;
    return'<button class="kv" data-shill="'+esc(o.name)+'"><span>'+esc(o.name)+
-    '<div class="s">'+o.d+(o.d===1?' listing':' listings')+' \u00b7 '+esc(dSpan(o.first,o.last))+
+    '<div class="s">'+o.d+(o.d===1?' listing':' listings')+
+    (o.shared?' \u00b7 '+o.shared+' shared':'')+' \u00b7 '+esc(dSpan(o.first,o.last))+
     ' \u00b7 avg '+usdc(o.r/o.d)+'</div></span>'+
     '<span class="r"><b>'+usdc(o.r)+'</b><div class="s">'+share+'% of the pot'+
     (o.c>0.009?' \u00b7 fee '+usdc(o.c):'')+'</div></span></button>';
@@ -3200,7 +3290,7 @@ function shillLog(L){
    return'<div class="dh" style="padding:10px 0 2px"><span>'+esc(dmy(d))+' \u00b7 '+
      g.length+(g.length===1?' listing':' listings')+'</span><b class="pos tn">'+usdc(sum)+'</b></div>'+
     g.map(function(t){
-     var who=broughtBy(t);
+     var who=broughtList(t).map(function(b){return b.name;}).join(', ');
      return'<button class="kv" data-ed="'+t.id+'"><span>'+esc(t.party||'\u2014')+
       '<div class="s">'+(who?esc(who)+(byInferred(t)?' \u00b7 from commission':''):'not credited')+
       ' \u00b7 '+esc(t.pkg||t.cat||'\u2014')+'</div></span>'+
@@ -3214,8 +3304,19 @@ function shillLog(L){
 function oneShillHtml(){
  var k=shillOpen,n=k.toLowerCase();
  var SC=shillScope();
- var L=SC.filter(function(t){return inScope(t)&&t.type==='in'&&broughtBy(t).toLowerCase()===n;})
+ /* Their listings, each carrying the share of it that is theirs — a deal
+    they brought with somebody else counts here for their half of it, not for
+    all of it and not for none. */
+ var L=SC.filter(function(t){return inScope(t)&&t.type==='in'&&broughtShare(t,k)>0;})
    .sort(function(a,b){return b.date.localeCompare(a.date);});
+ var W={},CM={};
+ L.forEach(function(t){
+  W[t.id]=broughtShare(t,k);
+  var cm=0;
+  (t.coms||[]).forEach(function(c){if(String(c.to||'').trim().toLowerCase()===n)cm+=num(c.usd);});
+  CM[t.id]=cm;
+ });
+ var mine=function(t){return recv(t)*W[t.id];};
  /* What reached them over the same stretch outside the commission book. Same
     match as the Commission panel uses: the name the payment was sent to. */
  var tips=SC.filter(function(t){
@@ -3238,21 +3339,25 @@ function oneShillHtml(){
     '<div class="s">no listing credited to them in '+esc(shillWhen())+'</div></span>'+
     '<span class="r"><b class="neg">'+usdc(tv)+'</b></span></div></div>'+tipHtml
   :'<p class="tiny">Nothing for '+esc(k)+' in '+esc(shillWhen())+'.</p>';
- var v=0,r=0,c=0,i;
- L.forEach(function(t){v+=num(t.usd);r+=recv(t);c+=comv(t);});
+ var v=0,r=0,c=0,i,split=0;
+ L.forEach(function(t){
+  v+=num(t.usd)*W[t.id];r+=mine(t);c+=CM[t.id];
+  if(W[t.id]<0.999)split++;
+ });
  /* six periods of what they brought in — a shiller going quiet shows here first */
  var ser=[],rr;
  for(i=5;i>=0;i--){
   rr=perRange(-i);var x=0;
-  L.forEach(function(t){if(inRange(t,rr))x+=recv(t);});
+  L.forEach(function(t){if(inRange(t,rr))x+=mine(t);});
   ser.push(x);
  }
  var pk={};
- L.forEach(function(t){var g=t.pkg||t.cat||'\u2014';pk[g]=(pk[g]||0)+recv(t);});
+ L.forEach(function(t){var g=t.pkg||t.cat||'\u2014';pk[g]=(pk[g]||0)+mine(t);});
  var pkl=Object.keys(pk).sort(function(a,b){return pk[b]-pk[a];});
  return span+'<div class="sec"><div class="tot3">'+
    '<div><div class="t">Brought in</div><div class="v">'+usdc(r)+'</div></div>'+
-   '<div><div class="t">Listings</div><div class="v">'+L.length+'</div></div>'+
+   '<div><div class="t">Listings</div><div class="v">'+L.length+
+    (split?'<div class="s" style="font-size:11px">'+split+' shared</div>':'')+'</div></div>'+
    '<div><div class="t">Avg deal</div><div class="v">'+usdc(r/L.length)+'</div></div></div>'+
   '<div class="kv" style="margin-top:12px"><span>Booked<div class="s">'+
    (v-r>0.009?usdc(v-r)+' of it has not landed yet':'all of it landed')+'</div></span>'+
@@ -3272,9 +3377,10 @@ function oneShillHtml(){
   '<div class="sec"><h3>Every listing</h3>'+L.map(function(t){
    return'<button class="kv" data-ed="'+t.id+'"><span>'+esc(t.party||'-')+
     '<div class="s">'+esc(dmy(t.date))+' \u00b7 '+esc(t.pkg||t.cat||'\u2014')+
+    (W[t.id]<0.999?' \u00b7 '+Math.round(W[t.id]*100)+'% of '+usdc(recv(t)):'')+
     (byInferred(t)?' \u00b7 from commission':'')+'</div></span>'+
-    '<span class="r"><b class="pos">'+usdc(recv(t))+'</b>'+
-    (comv(t)>0.009?'<div class="s">fee '+usdc(comv(t))+'</div>':'')+'</span></button>';
+    '<span class="r"><b class="pos">'+usdc(mine(t))+'</b>'+
+    (CM[t.id]>0.009?'<div class="s">fee '+usdc(CM[t.id])+'</div>':'')+'</span></button>';
   }).join('')+'</div>';
 }
 function cliHtml(){
@@ -3790,7 +3896,7 @@ function csv(all){
  function q(v){return'"'+String(v==null?'':v).replace(/"/g,'""')+'"';}
  var src=(all?sc(S.tx.filter(inScope),null):monthOnlyTx()).sort(function(a,b){return a.date.localeCompare(b.date);});
  var rows=src.map(function(t){
-  return[t.date,t.brand===SHARED?'Shared':(t.brand||''),t.type==='in'?'Money in':'Money out',t.cat,t.pkg,t.chain,t.party,t.type==='in'?broughtBy(t):'',t.amt,t.tok,t.rate,t.usd,recv(t),
+  return[t.date,t.brand===SHARED?'Shared':(t.brand||''),t.type==='in'?'Money in':'Money out',t.cat,t.pkg,t.chain,t.party,broughtList(t).map(function(b){return b.name;}).join(', '),t.amt,t.tok,t.rate,t.usd,recv(t),
    t.type==='in'?STL[t.status||'paid']:'',
    (t.coms||[]).map(function(c){return c.to+(c.pct?' '+c.pct+'%':'');}).join('; '),
    comv(t)||'',
