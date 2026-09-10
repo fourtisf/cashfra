@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-10-16">
+<meta name="cashfra-build" content="2026-09-10-17">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -188,10 +188,17 @@ button,label.sw,.row,.gk{cursor:pointer;-webkit-tap-highlight-color:transparent;
      compositing pass on every frame for a bar that is always on screen —
      enough, on a loaded machine, to keep the lock screen's layout from
      settling before it is measured */
-  background:rgba(255,255,255,.97);
+  /* solid, not 97%: a nav bar you can read the ledger through is one you
+     misread, and the blur that used to hide it cost a compositing pass on
+     every frame for a bar that is never off screen */
+  background:var(--card);
   border-top:1px solid var(--line);box-shadow:0 -6px 22px rgba(21,21,40,.05);
-  display:flex;align-items:center;justify-content:space-around;gap:2px;
   transition:transform .22s cubic-bezier(.2,.9,.3,1)}
+/* The tabs follow the content column, not the window. Stretched edge to edge
+   on a desktop they sit nowhere near what they belong to, and the reach from
+   Home to More becomes the width of the screen. */
+.nvrow{max-width:640px;margin:0 auto;display:flex;align-items:center;
+  justify-content:space-around;gap:2px}
 .stick.away{transform:translateY(110%)}
 .nv{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;
   padding:6px 2px;border-radius:14px;color:var(--faint);font-size:10.5px;font-weight:700;
@@ -644,11 +651,13 @@ body.locked{overflow:hidden}
 </div>
 
 <nav class="stick" id="nav" aria-label="Sections">
-  <button class="nv" data-nav="home"><span class="ni">🏠</span>Home</button>
-  <button class="nv" data-nav="ins"><span class="ni">📊</span>Insights</button>
-  <button class="bp" id="addBtn2" aria-label="New entry" title="New entry">+</button>
-  <button class="nv" data-nav="mix"><span class="ni">🍩</span>Packages</button>
-  <button class="nv" data-nav="menu"><span class="ni">⚙️</span>More</button>
+  <div class="nvrow">
+    <button class="nv" data-nav="home"><span class="ni">🏠</span>Home</button>
+    <button class="nv" data-nav="ins"><span class="ni">📊</span>Insights</button>
+    <button class="bp" id="addBtn2" aria-label="New entry" title="New entry">+</button>
+    <button class="nv" data-nav="mix"><span class="ni">🍩</span>Packages</button>
+    <button class="nv" data-nav="menu"><span class="ni">⚙️</span>More</button>
+  </div>
 </nav>
 
 <!-- form sheet -->
