@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-10-1">
+<meta name="cashfra-build" content="2026-09-10-2">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -957,6 +957,23 @@ function shillPays(k){
  out.sort(function(a,b){return b.date.localeCompare(a.date);});
  return out;
 }
+/* What the team cost over a stretch. Two sums, because the money reaches them
+   two ways: rule 6's commission for the period, and the payments that sit
+   outside that book — a tip, a bonus, a blue tick, a premium account.
+   They are disjoint by construction (SHILL_PAY never enters the netting, see
+   the note above it, and Team commission payouts never leave it), so adding
+   them cannot count one payment twice.
+   Pass gc when the caller already has totals() for the same list — the hero
+   does, and computing it twice for one card is waste. */
+function shillCost(L,gc){
+ var pay=0;
+ L.forEach(function(t){
+  if(t.type!=='out'||SHILL_PAY.indexOf(t.cat)<0)return;
+  pay+=num(t.usd);
+ });
+ var com=(gc===undefined)?totals(L).gc:gc;
+ return{com:com,pay:pay,all:com+pay};
+}
 /* Everyone the team money reached, by the name it was sent to. */
 function shillNames(){
  var seen={},order=[];
@@ -1160,11 +1177,15 @@ function render(){
     name worth showing, and 0 > 0 is false */
  shTopV=-1;
  Object.keys(shBy).forEach(function(k){if(shBy[k]>shTopV){shTopV=shBy[k];shTop=k;}});
- $('#vShill').textContent=shn?usdc(sh):'\u2014';
- /* say which of the three cases it is, rather than leaving $0.00 unexplained */
- $('#dShill').textContent=!shn?'nobody credited'
-  :(sh>0.009?(shTop+(Object.keys(shBy).length>1?' leads':''))
-   :(shn+(shn===1?' credited, not landed':' credited, none landed')));
+ /* Both halves of the arrangement, not just the flattering one. What they
+    brought in on its own says nothing about whether the team pays for itself
+    \u2014 the card is the net, and the line under it is the two numbers it came
+    from, so neither has to be taken on trust. */
+ var shC=shillCost(P,T.gc), shAny=shn||shC.all>0.009;
+ $('#vShill').textContent=shAny?usdc(sh-shC.all):'\u2014';
+ /* say which of the cases it is, rather than leaving $0.00 unexplained */
+ $('#dShill').textContent=!shAny?'nobody credited'
+  :(usdc(sh)+' in \u00b7 '+usdc(shC.all)+' paid');
  $('#dShill').className='d';
  var r1=deltaTxt(T.gi,Tp.gi,hasPrev,true);
  var r2=deltaTxt(T.go,Tp.go,hasPrev,false);
@@ -3115,14 +3136,30 @@ function shillHtml(){
   '<button data-sper="m"'+(pl&&per==='m'?' class="on"':'')+'>Month</button>'+
   '<button data-sper="all"'+(shillAll?' class="on"':'')+'>All</button></div>'+
   '<p class="tiny" style="margin:6px 0 0"><b>'+esc(shillWhen())+'</b></p>';
+ /* The other half of the arrangement. A screen that only ever counted what
+    they brought in made a team that costs more than it earns look like a team
+    doing fine. */
+ var cost=shillCost(L);
+ var costNote=cost.all>0.009
+  ?'<p class="tiny" style="margin:8px 0 0">'+usdc(cost.com)+' of that is commission'+
+    (cost.pay>0.009?', '+usdc(cost.pay)+' paid directly \u2014 tips, bonuses, a blue tick':'')+'.</p>'
+  :'';
  if(!rows.length)
   return seg+'<p class="tiny" style="padding:10px 0 20px">'+
    (S.tx.some(function(t){return inScope(t)&&t.type==='in'&&broughtBy(t);})
     ?'Nobody brought a listing in '+esc(shillWhen())+'. Try <b>All time</b>, or step the period with \u2039 \u203a on the hero.'
-    :'Nobody is credited with a listing yet. Fill in <b>Added by</b> when you log money in \u2014 that is the whole of it, and this fills itself.')+'</p>';
+    :'Nobody is credited with a listing yet. Fill in <b>Added by</b> when you log money in \u2014 that is the whole of it, and this fills itself.')+'</p>'+
+   (cost.all>0.009?'<div class="sec"><div class="kv"><span>Paid to the team anyway'+
+     '<div class="s">in '+esc(shillWhen())+', with no listing credited to anyone</div></span>'+
+     '<span class="r"><b class="neg">'+usdc(cost.all)+'</b></span></div>'+costNote+'</div>':'');
  var tot=0,deals=0,guessed=0;
  rows.forEach(function(o){tot+=o.r;deals+=o.d;guessed+=o.guessed;});
  return seg+
+  '<div class="sec" style="margin-top:12px"><div class="tot3">'+
+   '<div><div class="t">Brought in</div><div class="v">'+usdc(tot)+'</div></div>'+
+   '<div><div class="t">To the team</div><div class="v">'+usdc(cost.all)+'</div></div>'+
+   '<div><div class="t">Net</div><div class="v">'+usdc(tot-cost.all)+'</div></div></div>'+
+   costNote+'</div>'+
   '<p class="tiny">'+rows.length+(rows.length===1?' person':' people')+
   ' \u00b7 '+deals+(deals===1?' listing':' listings')+' \u00b7 '+usdc(tot)+' brought in \u00b7 ranked by money received</p>'+
   '<div class="sec">'+rows.map(function(o){
@@ -3176,10 +3213,31 @@ function shillLog(L){
 }
 function oneShillHtml(){
  var k=shillOpen,n=k.toLowerCase();
- var L=shillScope().filter(function(t){return inScope(t)&&t.type==='in'&&broughtBy(t).toLowerCase()===n;})
+ var SC=shillScope();
+ var L=SC.filter(function(t){return inScope(t)&&t.type==='in'&&broughtBy(t).toLowerCase()===n;})
    .sort(function(a,b){return b.date.localeCompare(a.date);});
- if(!L.length)return'<p class="tiny">Nothing for '+esc(k)+' in '+esc(shillWhen())+'.</p>';
+ /* What reached them over the same stretch outside the commission book. Same
+    match as the Commission panel uses: the name the payment was sent to. */
+ var tips=SC.filter(function(t){
+   return inScope(t)&&t.type==='out'&&SHILL_PAY.indexOf(t.cat)>=0&&
+          String(t.party||'').trim().toLowerCase()===n;
+  }).sort(function(a,b){return b.date.localeCompare(a.date);});
+ var tv=0;tips.forEach(function(t){tv+=num(t.usd);});
  var span='<p class="tiny" style="margin:4px 0 0"><b>'+esc(shillWhen())+'</b></p>';
+ var tipHtml=tips.length?'<div class="sec"><h3>Paid directly</h3>'+
+  '<p class="tiny" style="margin-top:0">Tips, bonuses, a blue tick — outside the commission book, so they settle nothing.</p>'+
+  tips.map(function(t){
+   return'<button class="kv" data-ed="'+t.id+'"><span>'+esc(t.party||'-')+
+    '<div class="s">'+esc(dmy(t.date))+' · '+esc(t.cat)+(t.note?' · '+esc(t.note):'')+'</div></span>'+
+    '<span class="r"><b class="neg">'+usdc(num(t.usd))+'</b></span></button>';
+  }).join('')+'</div>':'';
+ /* paid, but brought nothing in this stretch — still their page, and the
+    payments are the only thing on it worth showing */
+ if(!L.length)return tips.length
+  ?span+'<div class="sec"><div class="kv"><span>Paid, brought nothing in'+
+    '<div class="s">no listing credited to them in '+esc(shillWhen())+'</div></span>'+
+    '<span class="r"><b class="neg">'+usdc(tv)+'</b></span></div></div>'+tipHtml
+  :'<p class="tiny">Nothing for '+esc(k)+' in '+esc(shillWhen())+'.</p>';
  var v=0,r=0,c=0,i;
  L.forEach(function(t){v+=num(t.usd);r+=recv(t);c+=comv(t);});
  /* six periods of what they brought in — a shiller going quiet shows here first */
@@ -3202,12 +3260,15 @@ function oneShillHtml(){
   '<div class="kv"><span>Commission on their deals<div class="s">'+
    (r>0.009?Math.round(c/r*100)+'% of what they brought in':'nothing received yet')+
    '</div></span><span class="r"><b class="neg">'+usdc(c)+'</b></span></div>'+
-  '<div class="kv"><span>Kept after their fee</span><span class="r"><b>'+usdc(r-c)+'</b></span></div>'+
+  (tv>0.009?'<div class="kv"><span>Paid directly<div class="s">tips, bonuses, a blue tick</div></span>'+
+   '<span class="r"><b class="neg">'+usdc(tv)+'</b></span></div>':'')+
+  '<div class="kv"><span>Kept after what they cost</span><span class="r"><b>'+usdc(r-c-tv)+'</b></span></div>'+
   '<div class="kv"><span>Last 6 '+perNoun()+'s</span><span class="r">'+spark(ser)+'</span></div></div>'+
   (pkl.length>1?'<div class="sec"><h3>What they sell</h3>'+pkl.map(function(g){
    return'<div class="kv"><span>'+esc(g)+'</span><span class="r">'+usdc(pk[g])+
     '<div class="s">'+Math.round(pk[g]/r*100)+'%</div></span></div>';
   }).join('')+'</div>':'')+
+  tipHtml+
   '<div class="sec"><h3>Every listing</h3>'+L.map(function(t){
    return'<button class="kv" data-ed="'+t.id+'"><span>'+esc(t.party||'-')+
     '<div class="s">'+esc(dmy(t.date))+' \u00b7 '+esc(t.pkg||t.cat||'\u2014')+

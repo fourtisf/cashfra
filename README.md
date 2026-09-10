@@ -292,6 +292,7 @@ BASE=http://127.0.0.1:8123/ node test/analytics.mjs
 BASE=http://127.0.0.1:8123/ node test/landing.mjs
 BASE=http://127.0.0.1:8123/ node test/rules.mjs
 BASE=http://127.0.0.1:8123/ node test/brands.mjs
+BASE=http://127.0.0.1:8123/ node test/shill.mjs
 
 node test/update.mjs                    # starts and tears down its own server
 node test/sync.mjs                      # and its own sync service
@@ -376,6 +377,19 @@ one brand. The rest opens a person in the Commission panel and reads their
 statement against the ledger — earned, owed, one line per deal, the revenue
 they touched, and their **effective rate** measured against the default agreed
 with them — then copies it as text he can send them.
+
+`shill.mjs` (20 checks) covers the *Shill team* screen, which had none. The card
+used to count one half of the arrangement: a team that brought in $1,322 and was
+paid $1,500 for it read as $1,322, and nothing on the screen disagreed. So the
+suite computes the month's own arithmetic — rule 6's netted commission, plus the
+tips, bonuses and blue ticks that never enter that netting — and checks the card
+is the difference, that the line under it carries both halves, that the panel
+behind it repeats the same three figures and says what the cost is made of, that
+the two parts add up to the whole with neither counted twice, and that the
+Day/Week/Month/All switch moves the cost with the takings rather than only the
+takings. The last of it opens one shiller and checks **Kept after what they
+cost** against the ledger: their commission *and* anything paid to them
+directly, each taken off once.
 
 `update.mjs` (7 checks) ships a second build mid-run and verifies the handover
 described under *Redeploying*.
