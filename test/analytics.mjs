@@ -218,6 +218,58 @@ check(/after \$30\.02 fee/.test(solcat.sub), `and says what came off: "${solcat 
 const leads = cli.map(c => money(c.lead));
 check(leads.every((v, i) => i === 0 || leads[i - 1] >= v), `clients ranked by what they actually left: ${cli.slice(0, 3).map(c => c.name + ' ' + c.lead).join(' | ')}`);
 await page.screenshot({ path: process.env.SHOT || '/tmp/cashfra-analytics.png' });
+await closePanel();
+
+// ══ package & chain mix: by money, and by how many listings ══════════════
+/* The donut has always weighed money, and money cannot answer "which chain
+   do most of my listings land on". One $600 Trending on ETH outranks four
+   $100s on SOL by takings and loses to them four to one by count, so the two
+   readings genuinely disagree — this fixture is built so they must. */
+const dayNow = new Date().toISOString().slice(0, 10);
+const mixBase = { brand: (await page.evaluate(() => JSON.parse(localStorage.getItem('fourtis:ledger:v3')).brand)),
+  date: dayNow, type: 'in', tok: 'USDT', rate: 1, mt: Date.now(), coms: [] };
+await patch({ tx: [
+  { ...mixBase, id: 'mx1', cat: 'Trending', pkg: 'Trending', chain: 'ETH', party: 'big', amt: 600, usd: 600, status: 'paid', paid: 600 },
+  { ...mixBase, id: 'mx2', cat: 'Xpress listing', pkg: 'Xpress Listing', chain: 'SOL', party: 's1', amt: 100, usd: 100, status: 'paid', paid: 100 },
+  { ...mixBase, id: 'mx3', cat: 'Xpress listing', pkg: 'Xpress Listing', chain: 'SOL', party: 's2', amt: 100, usd: 100, status: 'paid', paid: 100 },
+  { ...mixBase, id: 'mx4', cat: 'Listing', pkg: 'Listing', chain: 'SOL', party: 's3', amt: 100, usd: 100, status: 'paid', paid: 100 },
+  { ...mixBase, id: 'mx5', cat: 'Listing', pkg: 'Listing', chain: 'SOL', party: 's4', amt: 100, usd: 100, status: 'unpaid', paid: 0 }
+] });
+await insights();
+const mixRowsOf = async () => page.$$eval('#pBody .mixr', rs => rs.map(r => ({
+  name: r.querySelector('.nm2').childNodes[0].textContent.trim(),
+  sub: r.querySelector('.sb').textContent.trim(),
+  pct: Number(r.querySelector('.pc').textContent.replace('%', '')),
+  color: r.querySelector('.dot').style.background })));
+const centres = async () => page.$$eval('#pBody .mixw text', t => t.map(x => x.textContent.trim()));
+
+const byMoney = await mixRowsOf();
+const mEth = byMoney.find(r => r.name === 'ETH'), mSol = byMoney.find(r => r.name === 'SOL');
+check(mEth && mSol && mEth.pct === 67 && mSol.pct === 33,
+      `by money ETH leads on one big deal (ETH ${mEth && mEth.pct}% / SOL ${mSol && mSol.pct}%)`);
+check((await centres()).includes('RECEIVED'), 'and the donut says it is counting money');
+
+await page.click('#pBody [data-mixby="d"]');
+await page.waitForTimeout(300);
+const byDeals = await mixRowsOf();
+const dEth = byDeals.find(r => r.name === 'ETH'), dSol = byDeals.find(r => r.name === 'SOL');
+check(dSol && dEth && dSol.pct === 80 && dEth.pct === 20,
+      `by listings the answer reverses, which is the whole point (SOL ${dSol && dSol.pct}% / ETH ${dEth && dEth.pct}%)`);
+const cen = await centres();
+check(cen.includes('LISTINGS') && cen.includes('5'),
+      `the donut counts every listing, the unpaid one included: ${cen.join(' / ')}`);
+check(/^4 listings/.test(dSol.sub) && /\$300\.00/.test(dSol.sub),
+      `and the line under it still carries the money: "${dSol.sub}"`);
+/* money mode must NOT count the unpaid one — that is money not held */
+check(/3 listings/.test(mSol.sub), `while by money it counts only what arrived: "${mSol.sub}"`);
+
+const pkg = byDeals.filter(r => ['Xpress listing', 'Listing', 'Trending'].includes(r.name));
+check(pkg.length === 3 && pkg.every(r => r.pct > 0),
+      `every package carries its own share: ${pkg.map(r => r.name + ' ' + r.pct + '%').join(' | ')}`);
+const colM = Object.fromEntries(byMoney.map(r => [r.name, r.color]));
+check(byDeals.filter(r => colM[r.name] && colM[r.name] !== r.color).length === 0,
+      'colour still follows the entity, not its rank, across the switch');
+await closePanel();
 
 await browser.close();
 report();

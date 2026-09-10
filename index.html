@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-10-11">
+<meta name="cashfra-build" content="2026-09-10-12">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -802,7 +802,7 @@ var DEF={v:3,tx:[],
 };
 var S=clone(DEF);
 var anchor=new Date(), flt='', editId=null, fType='in', fTokV='SOL', fChainV='SOL', fBrandV='', brandView='', formPkg='', panel='menu', undoBuf=null;
-var mixAll=false, ratePrefill='', hidAt=0, autoLocked=false, costOf='spend', cliOpen='', teamOpen='', shillOpen='', shillAll=false, shillDay=false;
+var mixAll=false, mixByD=false, ratePrefill='', hidAt=0, autoLocked=false, costOf='spend', cliOpen='', teamOpen='', shillOpen='', shillAll=false, shillDay=false;
 /* price-feed health. Deliberately not in S: whether the feed answered is a
    fact about this device right now, not something to persist or sync. */
 var rateErr=0, rateFails=0, rateNext=0, rateTick=null, ratePend=null;
@@ -2771,54 +2771,72 @@ function mixColor(k,order){
  var i=order.indexOf(k);
  return (i>=0&&i<MIXC.length)?MIXC[i]:MIXO;
 }
-function mixRows(list,keyf,order){
+/* Two different questions, and the money one cannot answer the other. "Which
+   package earns most" weights by what came in; "which chain do most of my
+   listings land on" counts listings, and a chain with one $600 deal beats one
+   with five $100s on the first while losing the second five to one. byD picks
+   which is being asked; every row still carries both, so the line under a
+   name says what the percentage does not. */
+function mixRows(list,keyf,order,byD){
  var m={},tot=0;
  list.forEach(function(t){
   if(t.type!=='in')return;
   var v=recv(t);
-  if(v<=0)return;                      /* unpaid deals are not money you hold */
+  /* Counting money cannot include what has not arrived. Counting listings
+     must: an unpaid listing is still one that happened, and dropping it is
+     how "most of my listings are on ETH" comes back wrong. */
+  if(!byD&&v<=0)return;
   var k=String(keyf(t)||'').trim()||'Other';
   var i=order.indexOf(k);
   if(i<0||i>=MIXC.length)k='Other';    /* one grey bucket, never two */
   if(!m[k])m[k]={v:0,d:0};
-  m[k].v+=v;m[k].d++;tot+=v;
+  m[k].v+=v;m[k].d++;tot+=byD?1:v;
  });
  var rows=Object.keys(m).map(function(k){
-  return{k:k,v:m[k].v,d:m[k].d,c:mixColor(k,order),p:tot?m[k].v/tot*100:0};
- }).sort(function(a,b){return b.v-a.v;});
- return{rows:rows,tot:tot};
+  var w=byD?m[k].d:m[k].v;
+  return{k:k,v:m[k].v,d:m[k].d,w:w,c:mixColor(k,order),p:tot?w/tot*100:0};
+ }).sort(function(a,b){return b.w-a.w||b.v-a.v;});
+ return{rows:rows,tot:tot,byD:!!byD};
 }
 function donut(g){
  var size=148,sw=20,r=(size-sw)/2,C=2*Math.PI*r,c=size/2,off=0,solo=g.rows.length<2,seg='';
  g.rows.forEach(function(x){
-  var len=g.tot?x.v/g.tot*C:0, draw=Math.max(1,len-(solo?0:2));   /* 2px surface gap */
+  var len=g.tot?x.w/g.tot*C:0, draw=Math.max(1,len-(solo?0:2));   /* 2px surface gap */
   seg+='<circle cx="'+c+'" cy="'+c+'" r="'+r.toFixed(2)+'" fill="none" stroke="'+x.c+'" stroke-width="'+sw+'"'+
    ' stroke-dasharray="'+draw.toFixed(2)+' '+(C-draw).toFixed(2)+'" stroke-dashoffset="'+(-off).toFixed(2)+'">'+
-   '<title>'+esc(x.k)+' — '+Math.round(x.p)+'% · '+usdc(x.v)+'</title></circle>';
+   '<title>'+esc(x.k)+' — '+Math.round(x.p)+'% · '+(g.byD?x.d+(x.d===1?' listing':' listings'):usdc(x.v))+'</title></circle>';
   off+=len;
  });
- return'<div class="mixw"><svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'" role="img" aria-label="Share of money received">'+
+ return'<div class="mixw"><svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'" role="img" aria-label="'+(g.byD?'Share of listings logged':'Share of money received')+'">'+
   '<circle cx="'+c+'" cy="'+c+'" r="'+r.toFixed(2)+'" fill="none" stroke="#F0F0F5" stroke-width="'+sw+'"/>'+
   '<g transform="rotate(-90 '+c+' '+c+')">'+seg+'</g>'+
-  '<text x="'+c+'" y="'+(c+1)+'" text-anchor="middle" font-size="20" style="fill:var(--ink);font-family:var(--disp);font-weight:800">'+usdc(g.tot)+'</text>'+
-  '<text x="'+c+'" y="'+(c+18)+'" text-anchor="middle" font-size="10" letter-spacing="1" style="fill:var(--faint);font-weight:700">RECEIVED</text>'+
+  '<text x="'+c+'" y="'+(c+1)+'" text-anchor="middle" font-size="20" style="fill:var(--ink);font-family:var(--disp);font-weight:800">'+(g.byD?String(g.tot):usdc(g.tot))+'</text>'+
+  '<text x="'+c+'" y="'+(c+18)+'" text-anchor="middle" font-size="10" letter-spacing="1" style="fill:var(--faint);font-weight:700">'+(g.byD?(g.tot===1?'LISTING':'LISTINGS'):'RECEIVED')+'</text>'+
   '</svg></div>';
 }
 function mixList(g){
  return g.rows.map(function(x){
+  /* the measure the percentage is NOT about leads the line under the name, or
+     the same figure is on the row twice and the other half is nowhere */
+  var d=x.d+(x.d===1?' listing':' listings');
   return'<div class="mixr"><span class="dot" style="background:'+x.c+'"></span>'+
-   '<span class="nm2">'+esc(x.k)+'<div class="sb">'+usdc(x.v)+' · '+x.d+(x.d===1?' deal':' deals')+'</div></span>'+
+   '<span class="nm2">'+esc(x.k)+'<div class="sb">'+(g.byD?d+' · '+usdc(x.v):usdc(x.v)+' · '+d)+'</div></span>'+
    '<span class="pc">'+Math.round(x.p)+'%</span></div>';
  }).join('');
 }
 function mixBlock(list){
- var mp=mixRows(list,function(t){return t.cat;},CATS['in']);
- var mc=mixRows(list,function(t){return t.chain;},S.chains);
+ var mp=mixRows(list,function(t){return t.cat;},CATS['in'],mixByD);
+ var mc=mixRows(list,function(t){return t.chain;},S.chains,mixByD);
  if(!mp.rows.length)return'';
  return'<div class="sec"><h3>Package &amp; chain mix</h3>'+
-  '<p class="tiny">Share of the money you actually received — which package earns it and which chain it came in on. Works itself out from your entries.</p>'+
+  '<p class="tiny">'+(mixByD
+   ?'How many listings each package and chain accounts for — how the work is spread, paid for yet or not.'
+   :'Share of the money you actually received — which package earns it and which chain it came in on.')+
+  ' Works itself out from your entries.</p>'+
   '<div class="mseg"><button data-mix="per"'+(mixAll?'':' class="on"')+'>'+(per==='w'?'This week':'This month')+'</button>'+
-  '<button data-mix="all"'+(mixAll?' class="on"':'')+'>All time</button></div>'+
+  '<button data-mix="all"'+(mixAll?' class="on"':'')+'>All time</button></div> '+
+  '<div class="mseg"><button data-mixby="v"'+(mixByD?'':' class="on"')+'>Money</button>'+
+  '<button data-mixby="d"'+(mixByD?' class="on"':'')+'>Listings</button></div>'+
   '<div class="mixh">By package</div>'+donut(mp)+mixList(mp)+
   (mc.rows.length?'<div class="mixh">By chain</div>'+donut(mc)+mixList(mc):'')+
   '</div>';
@@ -3607,7 +3625,7 @@ function dataHtml(){
 
 /* global events */
 document.addEventListener('click',function(e){
- var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-fixfee],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-seed],[data-mix],[data-sper],[data-cshare],[data-rate],[data-sync],[data-cli],[data-team],[data-shill],[data-tcopy],[data-lock]');
+ var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-fixfee],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-seed],[data-mix],[data-mixby],[data-sper],[data-cshare],[data-rate],[data-sync],[data-cli],[data-team],[data-shill],[data-tcopy],[data-lock]');
  if(!el)return;
  var d=el.dataset;
  if(d.lock!==undefined){
@@ -3629,6 +3647,7 @@ document.addEventListener('click',function(e){
   return;
  }
  if(d.mix!==undefined){mixAll=(d.mix==='all');repaint();return;}
+ if(d.mixby!==undefined){mixByD=(d.mixby==='d');repaint();return;}
  if(d.sper!==undefined){
   shillDay=(d.sper==='d');
   if(d.sper==='all')shillAll=true;

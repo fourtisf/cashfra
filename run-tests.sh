@@ -42,6 +42,15 @@ fi
 
 echo
 echo "== browser (dev server on :$PORT)"
+# Something else on the port is the worst kind of green: our server fails to
+# bind, exits, and every suite quietly tests whatever IS answering there —
+# another checkout, a stale server from an earlier run — while reporting on
+# this one. Refuse instead of guessing which it was.
+if python3 -c "import socket,sys; sys.exit(0 if socket.socket().connect_ex(('127.0.0.1',$PORT))==0 else 1)" 2>/dev/null; then
+  echo "  FAIL  :$PORT is already serving something else."
+  echo "        Stop it, or run: PORT=8124 ./run-tests.sh"
+  exit 1
+fi
 python3 dev-server.py "$PORT" >/dev/null 2>&1 &
 web=$!
 sleep 1
