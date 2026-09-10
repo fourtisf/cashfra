@@ -294,6 +294,43 @@ check(/fee −\$20\.00 · 20%/.test(negRow), `both halves of the fee land: "${(n
 const twoNames = await page.locator('.row', { hasText: '$NEGFEE' }).first().innerText();
 check(/by keya 10%, windy 10%/.test(twoNames), `two rows read as two people on 10% each: "${twoNames.replace(/\n/g, ' · ')}"`);
 
+// ══ 8. a negative that is already in the book ═══════════════════════════
+/* commit() refuses one on save now, but entries logged before that rule
+   still carry them — and nothing stopped the ledger from rendering one.
+   comv() summed raw, so 10% and -10% cancelled to zero and the row showed no
+   fee at all, while the Commission chip, the Shill team screen and Net —
+   which have always read a negative as nothing — said $14.84. One entry with
+   two answers to what the team cost, and the row was the one that looked
+   like a deal nobody was owed anything on. */
+const legacy = {
+  id: 'legacyneg', brand, date: day, type: 'in', cat: 'Listing', pkg: 'Listing', chain: 'ETH',
+  party: '$LEGACYNEG', amt: 0.06, tok: 'ETH', rate: 2473.83, usd: 148.43,
+  status: 'paid', paid: 148.43, mt: Date.now(),
+  coms: [{ to: 'keya', pct: 10, usd: 14.84, paid: false }, { to: 'windy', pct: -10, usd: -14.84, paid: false }]
+};
+await patch({ tx: [legacy] });
+const legRow = await page.locator('.row', { hasText: '$LEGACYNEG' }).first().innerText();
+check(/fee −\$14\.84/.test(legRow),
+      `the negative counts as nothing instead of cancelling the fee: "${(legRow.match(/fee −[^\n]*/) || ['no fee line at all'])[0]}"`);
+
+/* and the two screens agree on it, which is the whole point of the change */
+const chipTxt = await page.locator('.hchips').innerText();
+const chipCom = money((/Commission\n(\$[\d,.]+)/.exec(chipTxt) || [])[1] || '0');
+const rowFee = money((/fee −(\$[\d,.]+)/.exec(legRow) || [])[1] || '0');
+check(near(chipCom, rowFee), `the row and the Commission chip say the same number (${rowFee} / ${chipCom})`);
+
+/* Somebody on a negative is credited with nothing, so broughtList drops them
+   — and the row then read as one person when two were on the listing. */
+check(/by keya 10%, windy −10%/.test(legRow),
+      `both people are named, not only the one who earned: "${legRow.replace(/\n/g, ' · ')}"`);
+check(/fee error/.test(legRow), 'and the entry is flagged rather than left looking ordinary');
+
+/* An ordinary listing must not pick up the flag. */
+await patch({ tx: [legacy, { ...legacy, id: 'okdeal', party: '$OKFEE', coms: [{ to: 'keya', pct: 10, usd: 14.84, paid: false }] }] });
+const okRow = await page.locator('.row', { hasText: '$OKFEE' }).first().innerText();
+check(!/fee error/.test(okRow) && /fee −\$14\.84/.test(okRow),
+      `a clean listing is untouched by it: "${okRow.replace(/\n/g, ' · ')}"`);
+
 await browser.close();
 report();
 if (bad.length) process.exit(1);

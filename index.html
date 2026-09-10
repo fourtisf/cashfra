@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-10-8">
+<meta name="cashfra-build" content="2026-09-10-9">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -142,6 +142,7 @@ button,label.sw,.row,.gk{cursor:pointer;-webkit-tap-highlight-color:transparent;
 .pill.w{background:var(--out-soft);color:var(--out)}
 .pill.y{background:var(--amber-soft);color:var(--amber)}
 .pill.g{background:#F0F0F5;color:var(--sub)}
+.pill.r{background:var(--out);color:#fff}   /* a fee that cannot be right */
 
 .tot{display:flex;justify-content:space-between;gap:12px;padding:16px 8px 4px;font-size:12.5px;color:var(--faint);font-weight:600;flex-wrap:wrap}
 .tot b{font-variant-numeric:tabular-nums;font-weight:700}
@@ -832,9 +833,23 @@ function dayLbl(s){
 }
 function recv(t){if(t.type!=='in')return num(t.usd);var s=t.status||'paid';return s==='unpaid'?0:(s==='dp'?num(t.paid):num(t.usd));}
 function owed(t){return t.type==='in'?Math.max(0,num(t.usd)-recv(t)):0;}
+/* A commission below zero is not money owed to anybody, it is a typo, and
+   commit() refuses to save one. Entries logged before that rule still carry
+   them, and summing raw let one cancel another: 10% and -10% on the same
+   listing came to zero HERE, so the row showed no fee at all — while the
+   Commission chip, the Shill team screen and Net, which have always read a
+   negative as nothing (totals(): Math.max(a,p)), all said $14.84. One entry,
+   two answers to what the team cost, and the row was the one that looked
+   like a deal nobody was owed anything on. It counts as nothing here too;
+   row() flags the entry so it gets fixed rather than quietly picked over. */
 function comv(t){
  if(t.type!=='in')return 0;
- return (t.coms||[]).reduce(function(s,c){return s+num(c.usd);},0);
+ return (t.coms||[]).reduce(function(s,c){return s+Math.max(0,num(c.usd));},0);
+}
+/* The recipients on a negative — none, on anything saved under the rule. */
+function comBad(t){
+ if(t.type!=='in')return[];
+ return (t.coms||[]).filter(function(c){return num(c.usd)<0||num(c.pct)<0;});
 }
 
 /* storage */
@@ -1331,8 +1346,18 @@ function row(t){
  var by=broughtList(t).map(function(b){
   var bp=deal?b.com/deal*100:0;
   return b.name+(bp?' '+pctf(bp)+'%':'');
- }).join(', ');
- if(by)meta.push('by '+by);
+ });
+ /* Somebody on a negative earns nothing, so broughtList leaves them out — and
+    the row then reads as one person when ALFA put two on the deal. Named here
+    regardless, carrying the minus that is the reason they are not credited,
+    because a name silently dropped off a listing is the harder thing to
+    notice of the two. */
+ var badc=comBad(t);
+ badc.forEach(function(c){
+  var bp=num(c.pct)?Math.abs(num(c.pct)):(deal?Math.abs(num(c.usd))/deal*100:0);
+  by.push((String(c.to||'').trim()||'(no name)')+(bp?' \u2212'+pctf(bp)+'%':''));
+ });
+ if(by.length)meta.push('by '+by.join(', '));
  if(inc&&t.chain)meta.push(t.chain);
  meta.push(tokf(num(t.amt))+' '+t.tok);
  if(t.note)meta.push(t.note);
@@ -1340,6 +1365,9 @@ function row(t){
  if(inc&&st==='unpaid')pill='<span class="pill w">unpaid</span>';
  else if(inc&&st==='dp')pill='<span class="pill y">partial</span>';
  else if(t.recur)pill='<span class="pill g">monthly</span>';
+ /* Its own pill, not folded into the status: a listing can be unpaid AND
+    carry a broken fee, and the fee is the half that reads as nothing. */
+ if(badc.length)pill+='<span class="pill r">fee error</span>';
  var subs=[], aHtml;
  if(inc&&st==='unpaid'){
   aHtml='<span class="a u">'+usd(num(t.usd))+'</span>';
