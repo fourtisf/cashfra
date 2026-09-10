@@ -331,6 +331,46 @@ const okRow = await page.locator('.row', { hasText: '$OKFEE' }).first().innerTex
 check(!/fee error/.test(okRow) && /fee −\$14\.84/.test(okRow),
       `a clean listing is untouched by it: "${okRow.replace(/\n/g, ' · ')}"`);
 
+// ══ 9. finding them without having to scroll for them ═══════════════════
+/* The red pill only finds you if you scroll to it, and a fee error two
+   months back is one nobody scrolls to. Said once at the top for the whole
+   book instead — and the button goes to the field. It does not guess a
+   number on ALFA's behalf: only he knows whether windy was on 10% or on
+   nothing at all. */
+const older = { ...legacy, id: 'oldneg', date: '2026-03-14', party: '$OLDNEG',
+  coms: [{ to: 'keya', pct: -5, usd: -7.42, paid: false }] };
+await patch({ tx: [legacy, older] });
+const alertTxt = await page.locator('#alert').innerText();
+check(/2 listings have a commission below zero/.test(alertTxt),
+      `both are counted at the top, whichever month they sit in: "${alertTxt.replace(/\n/g, ' | ')}"`);
+
+await page.click('#alert [data-fixfee]');
+await page.waitForTimeout(600);
+check(await page.locator('#ovForm').evaluate(e => e.classList.contains('on')), 'Fix opens the entry itself');
+const focused = await page.evaluate(() => {
+  const a = document.activeElement;
+  return a ? { ci: a.dataset.ci, cf: a.dataset.cf, v: a.value } : {};
+});
+check(focused.cf === 'pct' && Number(focused.v) < 0,
+      `with the cursor on the number that is wrong, not on the amount (${JSON.stringify(focused)})`);
+
+await page.locator(`#comRows [data-ci="${focused.ci}"][data-cf="pct"]`).fill('10');
+await page.locator('#fAmt').click(); await page.waitForTimeout(250);
+await page.click('#fSave'); await page.waitForTimeout(600);
+check(/1 listing has a commission below zero/.test(await page.locator('#alert').innerText()),
+      'and the notice counts down as they are put right');
+
+/* the one left is in March, and the period on screen is not March */
+await page.click('#alert [data-fixfee]');
+await page.waitForTimeout(700);
+const gotDate = await page.locator('#fDate').inputValue();
+check(gotDate === '2026-03-14', `Fix travels to an entry outside the period on screen (${gotDate})`);
+await page.locator('#comRows [data-cf="pct"]').first().fill('5');
+await page.locator('#fAmt').click(); await page.waitForTimeout(250);
+await page.click('#fSave'); await page.waitForTimeout(600);
+check(!/below zero/.test(await page.locator('#alert').innerText()),
+      'and it is gone once the book is clean');
+
 await browser.close();
 report();
 if (bad.length) process.exit(1);

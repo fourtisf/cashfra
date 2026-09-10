@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-10-9">
+<meta name="cashfra-build" content="2026-09-10-10">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -851,6 +851,13 @@ function comBad(t){
  if(t.type!=='in')return[];
  return (t.coms||[]).filter(function(c){return num(c.usd)<0||num(c.pct)<0;});
 }
+/* Every listing carrying one, deliberately NOT period-scoped: a fee error in
+   March still makes March's numbers wrong, and a notice that only shows up
+   when you happen to be standing on that month is a notice never seen. The
+   brand filter stays, because that is whose books are on screen. */
+function badFees(){
+ return S.tx.filter(function(t){return inScope(t)&&comBad(t).length>0;});
+}
 
 /* storage */
 /* storage: claude.ai artifact storage when available, localStorage when opened standalone */
@@ -1226,6 +1233,12 @@ function render(){
  }
  var miss=missingRecur();
  if(miss.length)msgs.push({e:'\ud83d\udd01',bg:'var(--brand-soft)',b:String(miss.length),t:(miss.length===1?' recurring expense is':' recurring expenses are')+' not logged yet this month',c:'Log '+(miss.length===1?'it':'them'),a:'recur',v:'1'});
+ /* The red pill on the row only finds you if you scroll to it. This is the
+    same fault stated once, at the top, for the whole book. */
+ var bf=badFees();
+ if(bf.length)msgs.push({e:'\u26a0\ufe0f',bg:'var(--out-soft)',b:String(bf.length),
+  t:(bf.length===1?' listing has a commission below zero':' listings have a commission below zero')+
+    ' \u2014 nobody is owed it, so it is not counted',c:'Fix',a:'fixfee',v:'1'});
  $('#alert').innerHTML=msgs.map(function(m){
   return'<div class="nt"><span class="ic" style="background:'+m.bg+'">'+m.e+'</span>'+
    '<span class="tx"><b>'+esc(m.b)+'</b>'+esc(m.t)+'</span>'+
@@ -2204,7 +2217,9 @@ function calc(){
  $('#fUsd').textContent=usd(v);
  $('#fUsd').className=fType==='in'?'pos':'neg';
  var b=[];
- var ct=0,cn=0;fComs.forEach(function(c){var v2=num(c.usd);if(v2){ct+=v2;cn++;}});
+ /* clamped like comv(), or the summary is the one place left where a minus
+    still cancels somebody else's fee down to nothing */
+ var ct=0,cn=0;fComs.forEach(function(c){var v2=Math.max(0,num(c.usd));if(v2){ct+=v2;cn++;}});
  if(ct)b.push('fee '+usd(ct)+(cn>1?' \u00b7 '+cn+' people':''));
  if(fType==='in'&&$('#fStat').value!=='paid')b.push(STL[$('#fStat').value].toLowerCase());
  if($('#fNote').value)b.push('note');
@@ -2277,6 +2292,20 @@ function openForm(t){
  setTimeout(function(){var a=$('#fAmt');a.focus();if(a.select)a.select();},70);
 }
 function closeForm(){$('#ovForm').classList.remove('on');editId=null;rateWatch(false);}
+/* Which commission row cannot be right, and putting the cursor in it. Shared
+   by the save refusal and by the Fix button on the notice: both mean "this
+   field, this number", and there is no second opinion about which one. */
+function badComIdx(){
+ var i=-1;
+ fComs.forEach(function(c,k){if(i<0&&(num(c.pct)<0||num(c.usd)<0))i=k;});
+ return i;
+}
+function focusCom(i){
+ if(i<0)return;
+ $('#acc').open=true;
+ var pf=$('#comRows [data-ci="'+i+'"][data-cf="pct"]');
+ if(pf){pf.focus();if(pf.select)pf.select();}
+}
 function commit(){
  var date=$('#fDate').value;
  if(!date){toast('Pick a date first');return false;}
@@ -2289,13 +2318,12 @@ function commit(){
     indistinguishable from a deal that never had one. Refused here the way a
     missing rate is: this is arithmetic, not a judgement call like the
     cash-only warning, which stays a warning. */
- var badI=-1;
- fComs.forEach(function(c,i){if(badI<0&&num(c.pct)<0)badI=i;});
+ var badI=badComIdx();
  if(badI>=0){
-  toast((fComs[badI].to?fComs[badI].to+'’s':'A')+' commission is '+fComs[badI].pct+'% — it cannot be negative');
-  $('#acc').open=true;
-  var pf=$('#comRows [data-ci="'+badI+'"][data-cf="pct"]');
-  if(pf){pf.focus();if(pf.select)pf.select();}
+  var bc=fComs[badI];
+  toast((bc.to?bc.to+'’s':'A')+' commission is '+
+   (num(bc.pct)<0?bc.pct+'%':usd(num(bc.usd)))+' — it cannot be negative');
+  focusCom(badI);
   return false;
  }
  var inc=fType==='in', val=+(amt*rate).toFixed(2);
@@ -3549,7 +3577,7 @@ function dataHtml(){
 
 /* global events */
 document.addEventListener('click',function(e){
- var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-seed],[data-mix],[data-sper],[data-cshare],[data-rate],[data-sync],[data-cli],[data-team],[data-shill],[data-tcopy],[data-lock]');
+ var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-fixfee],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-seed],[data-mix],[data-sper],[data-cshare],[data-rate],[data-sync],[data-cli],[data-team],[data-shill],[data-tcopy],[data-lock]');
  if(!el)return;
  var d=el.dataset;
  if(d.lock!==undefined){
@@ -3608,6 +3636,23 @@ document.addEventListener('click',function(e){
  if(d.flt!==undefined){flt=(flt===d.flt)?'':d.flt;render();return;}
  if(d.flt2!==undefined){flt=d.flt2;render();return;}
  if(d.recur!==undefined){logRecur();return;}
+ if(d.fixfee!==undefined){
+  var bl=badFees();
+  if(!bl.length){render();toast('Nothing left to fix');return;}
+  var bt=bl[0];
+  /* the entry may be months back, or under another brand — go to it rather
+     than opening a form for something not on screen */
+  var rr=perRange(0);
+  if(!(bt.date>=iso(rr[0])&&bt.date<iso(rr[1])))anchor=DT(bt.date);
+  if(brandView&&bt.brand!==brandView&&bt.brand!==SHARED){brandView=bt.brand;S.brand=brandView;save();fillStatic();}
+  render();
+  openForm(bt);
+  /* openForm puts the cursor in the amount at 70ms; this lands after it, on
+     the number that is actually wrong */
+  setTimeout(function(){focusCom(badComIdx());},140);
+  if(bl.length>1)toast(bl.length+' listings have one \u2014 this is the first');
+  return;
+ }
  if(d.panel!==undefined){
   openPanel(d.panel);
   /* Settings is long, and the sign-in is near the bottom. Sending someone
