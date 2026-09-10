@@ -379,14 +379,17 @@ statement against the ledger — earned, owed, one line per deal, the revenue
 they touched, and their **effective rate** measured against the default agreed
 with them — then copies it as text he can send them.
 
-`insights.mjs` (23 checks) covers the three things ALFA could not read off
+`insights.mjs` (25 checks) covers the three things ALFA could not read off
 that panel, which were the same fault in three places: the screen held the
-answer and never said it out loud. The **% of spend / % of money in** switch
-changed a small grey percentage and a bar width and nothing else, so both
-sides read as the same screen twice — it now names the figure each share is
-out of, and the suite checks the two bases differ, that the amounts hold still
-while only the percentages move, and that a share of money in is never the
-larger of the two. The **day-by-day calendar** put each day's figure in a
+answer and never said it out loud. The cost-share switch was labelled **% of money in**
+under a heading reading WHERE MONEY WENT, so it looked like a list of income
+when every row under it is a cost — and it changed a small grey percentage and
+a bar width and nothing else, so both sides also read as the same screen twice.
+It reads **of spending / of money in** now, over a line beginning "Each cost
+below", and the suite checks neither label reads as the name of what is listed,
+that the line says the rows are costs, that the two bases differ, that the
+amounts hold still while only the percentages move, and that a share of money
+in is never the larger of the two. The **day-by-day calendar** put each day's figure in a
 `title`, which is a hover, and a phone has none — every day with money on it
 is a button now, and the suite checks no figure is left in a title, that
 tapping one spells the day out and agrees with it, and that tapping it again

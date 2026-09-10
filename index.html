@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-10-14">
+<meta name="cashfra-build" content="2026-09-10-15">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -3049,12 +3049,16 @@ function insHtml(){
   '<p class="tiny" style="margin-top:8px">'+esc(brandView||'All brands')+' \u00b7 updates automatically</p>'+
   (gin.tot?'<div class="sec"><h3>Where money came from</h3>'+bars(gin,false)+'</div>':'')+
   (gout.tot?'<div class="sec"><h3>Where money went</h3>'+
-   (T.gi>0?'<div class="mseg"><button data-cshare="spend"'+(costOf==='income'?'':' class="on"')+'>% of spend</button>'+
-    '<button data-cshare="income"'+(costOf==='income'?' class="on"':'')+'>% of money in</button></div>'+
-    /* The only thing this switch changes is a small grey percentage and a bar
-       width, so with nothing naming the number it divides by, the two sides
-       read as the same screen twice. Say the divisor out loud. */
-    '<p class="tiny" style="margin:8px 0 2px">Each share out of <b>'+
+   /* "% of money in" under a heading that says WHERE MONEY WENT reads as a
+      list of income, which is the opposite of what is under it — so the
+      labels say what they are measured *against*, and the line under them
+      says the rows are costs before it says what they are a share of. The
+      switch otherwise moves only a small grey percentage and a bar width,
+      and with nothing naming the divisor the two sides read as the same
+      screen twice. */
+   (T.gi>0?'<div class="mseg"><button data-cshare="spend"'+(costOf==='income'?'':' class="on"')+'>of spending</button>'+
+    '<button data-cshare="income"'+(costOf==='income'?' class="on"':'')+'>of money in</button></div>'+
+    '<p class="tiny" style="margin:8px 0 2px">Each cost below, as a share of the <b>'+
      usdc(costOf==='income'?T.gi:gout.tot)+'</b> '+
      (costOf==='income'?'that came in':'that went out')+'.</p>':'')+
    bars(gout,true,(costOf==='income'&&T.gi>0)?T.gi:0)+'</div>':'')+

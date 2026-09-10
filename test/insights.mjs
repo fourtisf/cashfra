@@ -56,8 +56,16 @@ await openIns();
 // ══ 1. the two cost shares are two different questions ═══════════════════
 const spend = await spendRows();
 check(spend.length > 1, `the spending breakdown renders (${spend.length} categories)`);
-const baseSpend = (await page.locator('#pBody').innerText()).match(/Each share out of (\$[\d,.]+) that went out/);
+const baseSpend = (await page.locator('#pBody').innerText()).match(/Each cost below, as a share of the (\$[\d,.]+) that went out/);
 check(!!baseSpend, `it names what it is dividing by: "${baseSpend ? baseSpend[0] : '(missing)'}"`);
+/* the heading above these rows says WHERE MONEY WENT, so a label reading
+   "% of money in" made them look like a list of income — the labels say what
+   the rows are measured against, and the line says they are costs */
+const segLabels = await page.locator('#pBody [data-cshare]').allTextContents();
+check(segLabels.every(t => !/^%/.test(t.trim())),
+      `neither label reads as the name of what is listed: ${segLabels.join(' | ')}`);
+check(/Each cost below/.test(await page.locator('#pBody').innerText()),
+      'and the line under them says out loud that the rows are costs');
 /* the shares are of the spending, so they add up to it */
 const sumSpend = spend.reduce((s, r) => s + r[1], 0);
 check(Math.abs(sumSpend - money(baseSpend[1])) < 1,
@@ -65,7 +73,7 @@ check(Math.abs(sumSpend - money(baseSpend[1])) < 1,
 
 await page.click('#pBody [data-cshare="income"]'); await page.waitForTimeout(350);
 const inShare = await spendRows();
-const baseIn = (await page.locator('#pBody').innerText()).match(/Each share out of (\$[\d,.]+) that came in/);
+const baseIn = (await page.locator('#pBody').innerText()).match(/Each cost below, as a share of the (\$[\d,.]+) that came in/);
 check(!!baseIn, `switching says so too: "${baseIn ? baseIn[0] : '(missing)'}"`);
 check(money(baseIn[1]) !== money(baseSpend[1]),
       `and it is a different number, which is the whole point: ${baseSpend[1]} vs ${baseIn[1]}`);
