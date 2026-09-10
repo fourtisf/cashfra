@@ -102,7 +102,21 @@ await m.evaluate(() => {
   document.documentElement.style.setProperty('--sab', '34px');
   document.getElementById('gate').classList.add('on');
 });
-await m.waitForTimeout(150);
+/* Measure only once the layout stops moving. On an emulated phone that is
+   still settling, Chromium centres this card against a viewport height it no
+   longer has: same DOM, same gate rect (839 tall, top 0), same 610px card, and
+   a logo 220px higher than it sits a frame later. That reported a notch
+   collision that was not one, on maybe one run in four under load — and a
+   check that fails when the machine is busy teaches everyone to ignore it. So
+   wait for two consecutive frames to agree before believing the number. */
+await m.waitForFunction(() => {
+  const g = document.getElementById('gate'), w = document.querySelector('.gwrap');
+  const cs = getComputedStyle(g), pt = parseFloat(cs.paddingTop), pb = parseFloat(cs.paddingBottom);
+  const gr = g.getBoundingClientRect(), wr = w.getBoundingClientRect();
+  /* where centring inside this box has to put the card */
+  const want = gr.top + pt + Math.max(0, (gr.height - pt - pb - wr.height) / 2);
+  return Math.abs(wr.top - want) < 1;
+}, null, { timeout: 5000 });
 const gate = await m.evaluate(() => {
   const g = document.getElementById('gate').getBoundingClientRect();
   const logo = document.querySelector('.glogo').getBoundingClientRect();

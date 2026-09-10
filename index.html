@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-10-3">
+<meta name="cashfra-build" content="2026-09-10-4">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -1333,24 +1333,31 @@ function row(t){
  if(inc&&st==='unpaid')pill='<span class="pill w">unpaid</span>';
  else if(inc&&st==='dp')pill='<span class="pill y">partial</span>';
  else if(t.recur)pill='<span class="pill g">monthly</span>';
- var sub, aHtml;
+ var subs=[], aHtml;
  if(inc&&st==='unpaid'){
   aHtml='<span class="a u">'+usd(num(t.usd))+'</span>';
-  sub='not received yet';
+  subs.push('not received yet');
  }else if(inc&&st==='dp'){
   aHtml='<span class="a pos">+'+usd(r).replace('-','')+'</span>';
-  sub='of '+usd(num(t.usd));
+  subs.push('of '+usd(num(t.usd)));
  }else{
   aHtml='<span class="a '+(inc?'pos':'neg')+'">'+(inc?'+':'-')+usd(inc?r:num(t.usd)).replace('-','')+'</span>';
-  var allP=(t.coms||[]).length&&(t.coms||[]).every(function(c){return c.paid||!num(c.usd);});
-  sub=comv(t)?('fee '+usd(comv(t))+(allP?' \u2713':'')):'';
+ }
+ /* What the team takes back out of it, written as the subtraction it is: a
+    listing is not worth what it billed when a fifth of it leaves again, and
+    the deal that reads "+$148.43" with nothing under it is the one nobody
+    remembers owing a fee on. Its own line, so a listing that is unpaid or
+    part-paid still says it \u2014 those used to lose the fee to the status. */
+ if(comv(t)){
+  var allP=(t.coms||[]).every(function(c){return c.paid||!num(c.usd);});
+  subs.push('fee \u2212'+usd(comv(t))+(allP?' \u2713':''));
  }
  return'<button class="row" data-ed="'+t.id+'">'+
   '<span class="av" style="background:'+cm[1]+'">'+cm[0]+'</span>'+
   '<span class="rl"><span class="rt">'+(esc(t.party)||'<em>No name</em>')+pill+'</span>'+
   '<span class="rs">'+esc(meta.join(' \u00b7 '))+'</span></span>'+
   '<span class="rv">'+aHtml+
-  (sub?'<span class="b">'+esc(sub)+'</span>':'')+'</span></button>';
+  subs.map(function(x){return'<span class="b">'+esc(x)+'</span>';}).join('')+'</span></button>';
 }
 
 /* recurring */

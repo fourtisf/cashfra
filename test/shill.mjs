@@ -190,7 +190,15 @@ await closePanel();
 
 const actTxt = await page.locator('.row', { hasText: '$SPLIT' }).first().innerText();
 check(/by Michael, Shiller 1/.test(actTxt), `the Activity row names who brought it: "${actTxt.replace(/\n/g, ' · ')}"`);
-check(/fee \$40/.test(actTxt), 'and still shows the fee beside it');
+/* written as a subtraction: "+$200.00" with "fee $40" under it reads like two
+   sums the deal earned, which is the misreading the minus removes */
+check(/fee −\$40/.test(actTxt), `and the fee under it is a subtraction: "${(actTxt.match(/fee[^\n]*/) || [])[0]}"`);
+
+// a part-paid listing keeps its fee too — that line used to lose it to the status
+await patch({ tx: [...S.tx, { ...pair, id: 'dpdeal', party: '$PARTIAL', status: 'dp', paid: 80 }] });
+const dpTxt = await page.locator('.row', { hasText: '$PARTIAL' }).first().innerText();
+check(/of \$200/.test(dpTxt) && /fee −\$40/.test(dpTxt),
+      `part-paid says both what landed and what the team takes: "${dpTxt.replace(/\n/g, ' · ')}"`);
 
 // an even split when there is no commission to weigh them by
 await patch({ tx: [...S.tx, { ...pair, id: 'evendeal', party: '$EVEN', coms: [] }] });
