@@ -193,6 +193,9 @@ check(/by Michael, Shiller 1/.test(actTxt), `the Activity row names who brought 
 /* written as a subtraction: "+$200.00" with "fee $40" under it reads like two
    sums the deal earned, which is the misreading the minus removes */
 check(/fee −\$40/.test(actTxt), `and the fee under it is a subtraction: "${(actTxt.match(/fee[^\n]*/) || [])[0]}"`);
+/* 30 + 10 off a $200 deal — the rate, so the size of the cut is readable
+   without doing the division in your head */
+check(/fee −\$40\.00 · 20%/.test(actTxt), 'and carries the rate it works out at');
 
 // a part-paid listing keeps its fee too — that line used to lose it to the status
 await patch({ tx: [...S.tx, { ...pair, id: 'dpdeal', party: '$PARTIAL', status: 'dp', paid: 80 }] });
@@ -222,6 +225,16 @@ check(await page.inputValue('#comRows [data-cf="to"]') === 'keya', 'a row is fil
 check(await page.inputValue('#comRows [data-cf="pct"]') === '8', "at the default agreed with them (8%)");
 await page.fill('#fAmt', '100'); await page.fill('#fRate', '1'); await page.waitForTimeout(250);
 check(/8/.test(await page.locator('#comRows .cu').first().textContent()), 'and the USD follows the amount');
+
+// somebody the team list has never heard of still gets a row to type into
+await page.fill('#fBy', 'keya, ghost');
+await page.locator('#fParty').click(); await page.waitForTimeout(300);
+const names = await page.locator('#comRows [data-cf="to"]').evaluateAll(e => e.map(x => x.value));
+const pcts = await page.locator('#comRows [data-cf="pct"]').evaluateAll(e => e.map(x => x.value));
+check(names.includes('ghost'), `a name with no default still gets a row (${names.join(', ')})`);
+check(pcts[names.indexOf('ghost')] === '', 'left empty, waiting for the % rather than inventing one');
+const ghostHint = (await page.locator('#byHint').textContent()).trim();
+check(/ghost/.test(ghostHint) && /type it/i.test(ghostHint), `and says where to type it: "${ghostHint}"`);
 
 // two names in one box is one person to the app — it says so rather than guessing
 await page.fill('#fBy', 'keya windy');

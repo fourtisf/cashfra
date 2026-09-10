@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-10-4">
+<meta name="cashfra-build" content="2026-09-10-5">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -824,6 +824,8 @@ function usd(v,d){d=(d===undefined)?2:d;
 function usdc(v){return usd(v,Math.abs(v)>=1000?0:2);}
 function idrf(v){return (v<0?'-':'')+'Rp'+Math.round(Math.abs(v)).toLocaleString('en-US');}
 function tokf(v){return !v?'0':(Math.abs(v)>=1000?v.toLocaleString('en-US',{maximumFractionDigits:2}):String(parseFloat(v.toFixed(6))));}
+/* "15", not "15.0" — and "12.5" where the half matters */
+function pctf(v){return String(+(Math.round(v*10)/10));}
 function dmy(s){if(!s)return'-';var d=DT(s);return d.getDate()+' '+MOS[d.getMonth()]+' '+String(d.getFullYear()).slice(2);}
 function dayLbl(s){
  if(s===today())return'Today';
@@ -1350,7 +1352,10 @@ function row(t){
     part-paid still says it \u2014 those used to lose the fee to the status. */
  if(comv(t)){
   var allP=(t.coms||[]).every(function(c){return c.paid||!num(c.usd);});
-  subs.push('fee \u2212'+usd(comv(t))+(allP?' \u2713':''));
+  /* the rate off the money, not off the pct fields: a deal edited down after
+     the fee was agreed still shows what the fee really costs it now */
+  var pc=num(t.usd)?comv(t)/num(t.usd)*100:0;
+  subs.push('fee \u2212'+usd(comv(t))+(pc?' \u00b7 '+pctf(pc)+'%':'')+(allP?' \u2713':''));
  }
  return'<button class="row" data-ed="'+t.id+'">'+
   '<span class="av" style="background:'+cm[1]+'">'+cm[0]+'</span>'+
@@ -1605,12 +1610,17 @@ function teamPct(name){
    hints still run, because that is where a two-people-in-one-name is caught. */
 function byComs(quiet){
  var names=byNames($('#fBy').value),added=0,missing=[],split='';
+ /* Every name named gets a row, whether or not the team list knows them:
+    with a default % it arrives filled in, without one it arrives empty and
+    waiting. Naming somebody and getting nothing back was the state that kept
+    producing a shiller credited with a deal and no fee against them — and
+    sending ALFA to Settings first, mid-entry, is not an answer to it. */
  if(!quiet)names.forEach(function(nm){
   var low=nm.toLowerCase();
   if(fComs.some(function(c){return String(c.to||'').trim().toLowerCase()===low;}))return;
   var p=teamPct(nm);
-  if(!p){missing.push(nm);return;}
-  fComs.push({to:nm,pct:p,usd:0,paid:false});added++;
+  if(!p)missing.push(nm);
+  fComs.push({to:nm,pct:p||'',usd:0,paid:false});added++;
  });
  if(quiet)names.forEach(function(nm){
   if(!teamPct(nm)&&!fComs.some(function(c){return String(c.to||'').trim().toLowerCase()===nm.toLowerCase();}))missing.push(nm);
@@ -1626,7 +1636,7 @@ function byComs(quiet){
  var el=$('#byHint'),msg='';
  if(split)msg='Two people? Write it <b>'+esc(split)+'</b> — as one name they share one row, and the credit is not split between them.';
  else if(missing.length)msg=esc(missing.join(' and '))+(missing.length===1?' has':' have')+
-   ' no default % in Settings → Team, so no commission was filled in. Add it under <b>More details</b> if they are owed one.';
+   ' no default % yet — type it into the row under <b>More details</b>. Set it once in Settings → Team and it fills itself next time.';
  el.classList.toggle('hide',!msg);
  el.innerHTML=msg;
  calc();
