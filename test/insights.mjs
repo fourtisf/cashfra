@@ -86,6 +86,46 @@ check(inShare.some((r, i) => r[2] !== spend[i][2]),
 check(inShare.every((r, i) => r[2] <= spend[i][2]),
       'a share of money in is never the larger of the two');
 
+// ══ 1b. who brought the money in, beside where it came from ═════════════
+/* "setiap listing pasti ada team shill" — so the panel that answers where the
+   money came from has to answer who brought it, in the same shape, without
+   leaving for another screen. */
+/* read per element, never off the joined text: "Shiller 1" followed by "12%"
+   reads as "Shiller 112%" once they are concatenated, and the first version of
+   this check duly reported a 112% share */
+const whoSec = await page.evaluate(() => {
+  const h = [...document.querySelectorAll('#pBody h3')].find(x => /Who brought it/.test(x.textContent));
+  if (!h) return null;
+  const sec = h.parentElement;
+  return {
+    note: (sec.querySelector('p') || {}).textContent || '',
+    rows: [...sec.querySelectorAll('[data-shill]')].map(r => ({
+      name: r.getAttribute('data-shill'),
+      pct: parseFloat(((r.querySelector('span .s') || {}).textContent || '').replace(/[^0-9.]/g, '')),
+      amt: parseFloat(((r.querySelector('.r b') || {}).textContent || '').replace(/[^0-9.-]/g, ''))
+    })),
+    uncredited: [...sec.querySelectorAll('.kv')].some(r => /Not credited/.test(r.textContent))
+  };
+});
+check(!!whoSec, 'Insights answers who brought the money, not only where it came from');
+check(whoSec.rows.length > 0, `one row per shiller (${whoSec.rows.map(r => r.name + ' ' + r.amt).join(', ')})`);
+check(/over \w+ \d{4}|over \d/.test(whoSec.note),
+      `and says which stretch it is counting: "${whoSec.note.slice(0, 90)}"`);
+/* every share is of the money that came in, so none of them can exceed it,
+   and what is left over is the listings nobody is credited with */
+const whoPct = whoSec.rows.map(r => r.pct);
+check(whoPct.every(v => v >= 0 && v <= 100) && whoPct.reduce((a, b) => a + b, 0) <= 100,
+      `their shares are of the money in, so they cannot add past it (${whoPct.join('+')}%)`);
+check(whoPct.reduce((a, b) => a + b, 0) < 100 ? whoSec.uncredited : true,
+      'and what the shares do not cover is named as uncredited, not quietly dropped');
+await page.click(`#pBody [data-shill="${whoSec.rows[0].name}"]`); await page.waitForTimeout(400);
+const oneTxt = await page.locator('#pBody').innerText();
+check(/Brought in|Kept after what they cost/.test(oneTxt),
+      `and it really opens theirs rather than redrawing Insights: "${oneTxt.split('\n').slice(0, 3).join(' · ')}"`);
+await page.click('#pBack'); await page.waitForTimeout(350);   // back to the shill list
+await page.click('#pBack'); await page.waitForTimeout(350);   // and to the menu
+await page.click('#pBody .mi[data-panel="ins"]'); await page.waitForTimeout(400);
+
 // ══ 2. a day on the calendar says what it was, without a hover ═══════════
 const cal = page.locator('#pBody .cal button');
 const n = await cal.count();

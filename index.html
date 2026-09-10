@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-10-15">
+<meta name="cashfra-build" content="2026-09-10-16">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -2999,6 +2999,37 @@ function insHtml(){
  }
  var gin=group(P.filter(function(t){return t.type==='in';}),recv);
  var gout=group(P.filter(function(t){return t.type==='out'&&t.cat!=='Team commission';}),function(t){return num(t.usd);});
+ /* Who brought the money in, beside where it came from. The Shill team panel
+    is the full record — this is the same question asked in the shape the rest
+    of Insights answers it, so "keya $X this week, windy $Y" is readable
+    without leaving the analysis. Split by commission share (rule 16), so two
+    people on one listing take their own halves and never both of it. */
+ function whoBars(){
+  var m={},tot=0,seen=0,un=0;
+  P.forEach(function(t){
+   if(t.type!=='in')return;
+   var v=recv(t);
+   if(v<=0)return;
+   seen+=v;
+   var who=broughtList(t);
+   if(!who.length){un+=v;return;}
+   who.forEach(function(b){m[b.name]=(m[b.name]||0)+v*b.w;tot+=v*b.w;});
+  });
+  if(!tot)return'';
+  var keys=Object.keys(m).sort(function(a,b){return m[b]-m[a];});
+  return'<div class="sec"><h3>Who brought it</h3>'+
+   '<p class="tiny" style="margin-top:0">Each shiller\u2019s share of the '+usdc(seen)+
+   ' that came in over '+esc(perLabel(0))+'. A listing brought by two is split by what each earned on it.</p>'+
+   keys.map(function(k){
+    var v=m[k],pct=seen?Math.round(v/seen*100):0;
+    return'<button class="kv" data-shill="'+esc(k)+'"><span>'+esc(k)+
+     '<div class="s">'+pct+'% of the money in</div></span>'+
+     '<span class="r"><b class="pos">'+usdc(v)+'</b><div class="s">\u203a</div></span></button>';
+   }).join('')+
+   (un>0.009?'<div class="kv"><span>Not credited<div class="s">no commission on them, so nobody is named</div></span>'+
+     '<span class="r"><b style="color:var(--faint)">'+usdc(un)+'</b></span></div>':'')+
+   '</div>';
+ }
  function bars(g,red,den){
   den=den||g.tot;
   return Object.keys(g.m).sort(function(a,b){return g.m[b]-g.m[a];}).map(function(k){
@@ -3048,6 +3079,7 @@ function insHtml(){
  return perBar()+
   '<p class="tiny" style="margin-top:8px">'+esc(brandView||'All brands')+' \u00b7 updates automatically</p>'+
   (gin.tot?'<div class="sec"><h3>Where money came from</h3>'+bars(gin,false)+'</div>':'')+
+  whoBars()+
   (gout.tot?'<div class="sec"><h3>Where money went</h3>'+
    /* "% of money in" under a heading that says WHERE MONEY WENT reads as a
       list of income, which is the opposite of what is under it — so the
@@ -3794,7 +3826,10 @@ document.addEventListener('click',function(e){
  }
  if(d.cli!==undefined){cliOpen=d.cli;$('#pTitle').textContent=d.cli;$('#pBack').classList.remove('hide');repaint();return;}
  if(d.team!==undefined){teamOpen=d.team;$('#pTitle').textContent=d.team;$('#pBack').classList.remove('hide');repaint();return;}
- if(d.shill!==undefined){shillOpen=d.shill;$('#pTitle').textContent=d.shill;$('#pBack').classList.remove('hide');repaint();return;}
+ /* also reached from Insights' "Who brought it", where the panel is not the
+    shill one yet — without moving it, repaint would draw Insights again under
+    that person's name */
+ if(d.shill!==undefined){panel='shill';shillOpen=d.shill;$('#pTitle').textContent=d.shill;$('#pBack').classList.remove('hide');repaint();return;}
  if(d.tcopy!==undefined){
   copyText(teamText(d.tcopy)).then(function(okc){toast(okc?'Statement copied \u2014 paste it to them':'Could not copy');});
   return;

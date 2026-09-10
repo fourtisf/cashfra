@@ -379,7 +379,7 @@ statement against the ledger — earned, owed, one line per deal, the revenue
 they touched, and their **effective rate** measured against the default agreed
 with them — then copies it as text he can send them.
 
-`insights.mjs` (25 checks) covers the three things ALFA could not read off
+`insights.mjs` (31 checks) covers the three things ALFA could not read off
 that panel, which were the same fault in three places: the screen held the
 answer and never said it out loud. The cost-share switch was labelled **% of money in**
 under a heading reading WHERE MONEY WENT, so it looked like a list of income
@@ -389,7 +389,15 @@ It reads **of spending / of money in** now, over a line beginning "Each cost
 below", and the suite checks neither label reads as the name of what is listed,
 that the line says the rows are costs, that the two bases differ, that the
 amounts hold still while only the percentages move, and that a share of money
-in is never the larger of the two. The **day-by-day calendar** put each day's figure in a
+in is never the larger of the two. It also answers **who** brought the money, beside where it came from — each
+shiller's share of the period, split by commission, with whatever nobody is
+credited with named rather than dropped; the suite checks the shares cannot add
+past the money in and that a name opens that person's record rather than
+redrawing Insights under their name. (Its first version read the percentages
+off the joined row text and reported a 112% share: "Shiller 1" followed by
+"12%" reads as "Shiller 112%". It reads per element now.)
+
+The **day-by-day calendar** put each day's figure in a
 `title`, which is a hover, and a phone has none — every day with money on it
 is a button now, and the suite checks no figure is left in a title, that
 tapping one spells the day out and agrees with it, and that tapping it again
