@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-10-5">
+<meta name="cashfra-build" content="2026-09-10-6">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -232,6 +232,7 @@ button,label.sw,.row,.gk{cursor:pointer;-webkit-tap-highlight-color:transparent;
 
 .crow{display:grid;grid-template-columns:1fr 64px 74px 24px;gap:7px;margin-bottom:8px;align-items:center}
 .crow .cu{font-size:12px;color:var(--faint);font-weight:700;text-align:right;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crow .cu.bad{color:var(--out)}   /* a commission that came out negative */
 .crow input{background:#F5F5F9;border-radius:12px;padding:10px 11px;font-size:13.5px;border:1.5px solid transparent;min-width:0}
 .crow input:focus{outline:none;border-color:var(--brand);background:var(--card)}
 .crow input.nm{text-align:right;font-variant-numeric:tabular-nums}
@@ -1581,8 +1582,8 @@ function renderComs(){
  $('#comRows').innerHTML=fComs.map(function(c,i){
   return'<div class="crow">'+
    '<input list="dlTeam" placeholder="Name" autocomplete="off" data-ci="'+i+'" data-cf="to" value="'+esc(c.to)+'">'+
-   '<input class="nm" type="number" step="any" inputmode="decimal" placeholder="%" data-ci="'+i+'" data-cf="pct" value="'+(c.pct||'')+'">'+
-   '<span class="cu" data-cu="'+i+'">'+(num(c.usd)?usdc(num(c.usd)):'\u2013')+'</span>'+
+   '<input class="nm" type="number" step="any" min="0" inputmode="decimal" placeholder="%" data-ci="'+i+'" data-cf="pct" value="'+(c.pct||'')+'">'+
+   '<span class="cu'+(num(c.usd)<0?' bad':'')+'" data-cu="'+i+'">'+(num(c.usd)?usdc(num(c.usd)):'\u2013')+'</span>'+
    '<button type="button" data-crm="'+i+'" aria-label="Remove">\u2715</button></div>';
  }).join('');
 }
@@ -1591,7 +1592,12 @@ function syncComUsd(){
  fComs.forEach(function(c,i){
   c.usd=num(c.pct)?+((v*num(c.pct))/100).toFixed(2):0;
   var el=$('#comRows [data-cu="'+i+'"]');
-  if(el)el.textContent=c.usd?usdc(c.usd):'\u2013';
+  if(!el)return;
+  el.textContent=c.usd?usdc(c.usd):'\u2013';
+  /* a minus typed into a % is a slip, and its worst form is the quiet one:
+     two rows at 10 and -10 cancel, the deal saves with no fee at all, and
+     the row in the ledger looks exactly like a deal that never had one */
+  el.classList.toggle('bad',c.usd<0);
  });
 }
 function teamPct(name){
@@ -2283,6 +2289,21 @@ function commit(){
  var amt=num($('#fAmt').value), rate=num($('#fRate').value);
  if(!amt){toast('Enter an amount first');$('#fAmt').focus();return false;}
  if(!rate){toast('Enter the USD rate too');$('#fRate').focus();return false;}
+ /* Nobody is owed a negative commission, and a minus typed into one of these
+    does not read as an error — it reads as nothing at all. Two rows at 10 and
+    -10 cancel to zero, the entry saves with no fee, and the ledger row is
+    indistinguishable from a deal that never had one. Refused here the way a
+    missing rate is: this is arithmetic, not a judgement call like the
+    cash-only warning, which stays a warning. */
+ var badI=-1;
+ fComs.forEach(function(c,i){if(badI<0&&num(c.pct)<0)badI=i;});
+ if(badI>=0){
+  toast((fComs[badI].to?fComs[badI].to+'’s':'A')+' commission is '+fComs[badI].pct+'% — it cannot be negative');
+  $('#acc').open=true;
+  var pf=$('#comRows [data-ci="'+badI+'"][data-cf="pct"]');
+  if(pf){pf.focus();if(pf.select)pf.select();}
+  return false;
+ }
  var inc=fType==='in', val=+(amt*rate).toFixed(2);
  var st=inc?$('#fStat').value:'paid';
  var rec={id:editId||uid(),date:date,type:fType,cat:catVal(),brand:fBrandV,

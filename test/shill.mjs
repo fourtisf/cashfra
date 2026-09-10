@@ -236,7 +236,37 @@ check(pcts[names.indexOf('ghost')] === '', 'left empty, waiting for the % rather
 const ghostHint = (await page.locator('#byHint').textContent()).trim();
 check(/ghost/.test(ghostHint) && /type it/i.test(ghostHint), `and says where to type it: "${ghostHint}"`);
 
+// ── a minus typed into a % cancels the fee, silently, unless it is refused ──
+/* 10 and -10 across two people sum to nothing: the entry saves with no fee
+   and reads in the ledger exactly like a deal that never had one. */
+await page.click('#fX'); await page.waitForTimeout(200);          // a clean form
+await page.click('#addBtn2'); await page.waitForSelector('#ovForm.on'); await page.waitForTimeout(250);
+await page.fill('#fAmt', '100'); await page.fill('#fRate', '1');
+await page.fill('#fBy', 'keya, windy');
+await page.locator('#fParty').click(); await page.waitForTimeout(300);
+const pctFields = page.locator('#comRows [data-cf="pct"]');
+await pctFields.nth(0).fill('10');
+await pctFields.nth(1).fill('-10');
+await page.locator('#fAmt').click(); await page.waitForTimeout(250);
+const cus = await page.locator('#comRows .cu').evaluateAll(e => e.map(x => [x.textContent.trim(), x.className]));
+check(/bad/.test(cus[1][1]) && !/bad/.test(cus[0][1]),
+      `the negative one is called out where it is typed (${cus.map(c => c[0]).join(' / ')})`);
+await page.fill('#fParty', '$NEGFEE');
+await page.click('#fSave'); await page.waitForTimeout(400);
+check(await page.locator('#ovForm').evaluate(e => e.classList.contains('on')),
+      'saving is refused rather than quietly booking a deal with no fee');
+check(/cannot be negative/.test(await page.locator('#toast').textContent()),
+      `and says why: "${(await page.locator('#toast').textContent()).trim()}"`);
+await pctFields.nth(1).fill('10');
+await page.locator('#fAmt').click(); await page.waitForTimeout(250);
+await page.click('#fSave'); await page.waitForTimeout(500);
+check(!await page.locator('#ovForm').evaluate(e => e.classList.contains('on')),
+      'and saves once the minus is gone');
+const negRow = await page.locator('.row', { hasText: '$NEGFEE' }).first().innerText();
+check(/fee −\$20\.00 · 20%/.test(negRow), `both halves of the fee land: "${(negRow.match(/fee[^\n]*/) || [])[0]}"`);
+
 // two names in one box is one person to the app — it says so rather than guessing
+await page.click('#addBtn2'); await page.waitForSelector('#ovForm.on'); await page.waitForTimeout(250);
 await page.fill('#fBy', 'keya windy');
 await page.locator('#fParty').click(); await page.waitForTimeout(300);
 const byHint = (await page.locator('#byHint').textContent()).trim();

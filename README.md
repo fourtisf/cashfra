@@ -378,7 +378,7 @@ statement against the ledger — earned, owed, one line per deal, the revenue
 they touched, and their **effective rate** measured against the default agreed
 with them — then copies it as text he can send them.
 
-`shill.mjs` (38 checks) covers the *Shill team* screen, which had none. The card
+`shill.mjs` (43 checks) covers the *Shill team* screen, which had none. The card
 used to count one half of the arrangement: a team that brought in $1,322 and was
 paid $1,500 for it read as $1,322, and nothing on the screen disagreed. So the
 suite computes the month's own arithmetic — rule 6's netted commission, plus the
@@ -402,7 +402,11 @@ too, where the status used to crowd it out), that typing a shiller into
 **Added by** fills their commission at the default agreed with them — and
 still opens a row, empty and waiting for the %, for somebody the team list has
 never heard of — and opens the section so it is seen, and that two names typed into one box is caught and
-said out loud instead of being split on a guess about spaces.
+said out loud instead of being split on a guess about spaces. It ends on the
+slip that sent this whole thread round twice: a minus typed into one of two
+commission rows, which cancels the other and saves a deal that reads like it
+never had a fee. That is refused on save now, and the suite checks it is
+refused, says why, and goes through once the minus is gone.
 
 `update.mjs` (7 checks) ships a second build mid-run and verifies the handover
 described under *Redeploying*.
