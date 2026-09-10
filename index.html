@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-10-13">
+<meta name="cashfra-build" content="2026-09-10-14">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -367,7 +367,19 @@ button.kv:active{opacity:.6}
 .cal i{aspect-ratio:1;border-radius:9px;background:#F4F4F8;display:grid;place-items:center;
   font-size:10.5px;font-weight:700;font-style:normal;color:var(--faint);font-variant-numeric:tabular-nums}
 .cal i.e{background:none}
-.cal i.hot{color:#fff}
+.cal i.hot,.cal button.hot{color:#fff}
+.cal button{aspect-ratio:1;border-radius:9px;display:grid;place-items:center;font:inherit;
+  font-size:11.5px;font-weight:700;color:var(--sub);font-variant-numeric:tabular-nums;
+  touch-action:manipulation;cursor:pointer}
+.cal button.sel{box-shadow:0 0 0 2px var(--ink);color:var(--ink)}
+.cal button.sel.hot{box-shadow:0 0 0 2px var(--ink);color:#fff}
+.pbar{display:flex;align-items:center;gap:8px;margin:2px 0 4px}
+.pbar b{font-size:14.5px;font-weight:800;letter-spacing:-.01em}
+.pbar>button{width:30px;height:30px;border-radius:10px;background:var(--bg);color:var(--sub);
+  font-size:17px;font-weight:700;line-height:1;flex:none;touch-action:manipulation}
+.pbar>button:disabled{opacity:.35}
+.pbar .mseg{padding:3px;font-size:12px}
+.pbar .mseg button{padding:5px 11px}
 .callg{display:flex;align-items:center;gap:7px;margin-top:11px;font-size:11.5px;color:var(--faint);font-weight:600}
 .callg u{width:13px;height:13px;border-radius:4px;text-decoration:none;flex:none}
 
@@ -845,6 +857,7 @@ var DEF={v:3,tx:[],
 };
 var S=clone(DEF);
 var anchor=new Date(), flt='', editId=null, fType='in', fTokV='SOL', fChainV='SOL', fBrandV='', brandView='', formPkg='', panel='menu', undoBuf=null;
+var calDay=0;                     /* the day tapped in the calendar, 0 = none */
 var mixAll=false, mixByD=false, ratePrefill='', hidAt=0, autoLocked=false, costOf='spend', cliOpen='', teamOpen='', shillOpen='', shillAll=false, shillDay=false;
 /* price-feed health. Deliberately not in S: whether the feed answered is a
    fact about this device right now, not something to persist or sync. */
@@ -1113,6 +1126,7 @@ function perLabel(off){
 function perNoun(){return per==='m'?'month':'week';}
 function prevShort(){if(per==='m'){var s=perRange(-1)[0];return MOS[s.getMonth()];}return'last week';}
 function step(d){
+ calDay=0;                        /* a day picked in one month means nothing in the next */
  if(per==='m')anchor=new Date(anchor.getFullYear(),anchor.getMonth()+d,1);
  /* whole weeks from where the anchor already is, not from the Monday it sits
     in: weekStart(x+7) is weekStart(x)+7 either way, so the week on screen is
@@ -2750,14 +2764,38 @@ function calSec(){
    st=';background:rgba('+(v>0?'14,159,79':'229,72,77')+','+(0.12+0.76*a).toFixed(2)+')';
    if(a>0.5)cls=' hot';
   }
-  cells+='<i class="'+cls.trim()+'" style="'+st.slice(1)+'" title="'+i+' '+esc(MOS[first.getMonth()])+' · '+usdc(v)+'">'+i+'</i>';
+  /* A title attribute is a hover, and a phone has none — so the whole point
+     of this grid, what any given day actually was, could be read only on a
+     desktop. Every day with money on it is a button now, and says its figure
+     in the line under the grid. */
+  cells+=v
+   ?'<button type="button" class="'+(cls.trim()+(calDay===i?' sel':'')).trim()+'" data-calday="'+i+'"'+
+     ' style="'+st.slice(1)+'" aria-label="'+i+' '+esc(MOS[first.getMonth()])+', '+usdc(v)+'">'+i+'</button>'
+   :'<i class="'+cls.trim()+'" style="'+st.slice(1)+'">'+i+'</i>';
+ }
+ /* what the tapped day was, spelled out where a tooltip used to be */
+ var pick='';
+ if(calDay&&day[calDay]!==undefined){
+  var dv=day[calDay],dIso=iso(new Date(first.getFullYear(),first.getMonth(),calDay));
+  var dn=0,dIn=0,dOut=0;
+  P.forEach(function(t){
+   if(t.date!==dIso)return;
+   dn++;
+   if(t.type==='in')dIn+=recv(t);else dOut+=num(t.usd);
+  });
+  pick='<div class="kv" style="margin-top:10px"><span>'+esc(dmy(dIso))+
+   '<div class="s">'+dn+(dn===1?' entry':' entries')+
+   (dIn?' · '+usdc(dIn)+' in':'')+(dOut?' · '+usdc(dOut)+' out':'')+'</div></span>'+
+   '<span class="r"><b class="'+(dv>=0?'pos':'neg')+'">'+usdc(dv)+'</b></span></div>';
  }
  return'<div class="sec"><h3>Day by day</h3>'+
   '<p class="tiny">Net for each day of '+esc(perLabel(0))+' — how the month actually ran, not just where it ended.</p>'+
   '<div class="calh"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>'+
   '<div class="cal">'+cells+'</div>'+
   '<div class="callg"><u style="background:rgba(229,72,77,.7)"></u>out<u style="background:#F4F4F8"></u>nothing'+
-  '<u style="background:rgba(14,159,79,.7)"></u>in<span style="margin-left:auto">busiest '+usdc(mx)+'</span></div></div>';
+  '<u style="background:rgba(14,159,79,.7)"></u>in<span style="margin-left:auto">busiest '+usdc(mx)+'</span></div>'+
+  pick+
+  (calDay?'':'<p class="tiny" style="margin-top:8px">Tap a coloured day to see what it was.</p>')+'</div>';
 }
 /* The day the month's costs were finally covered. Everything after it is yours. */
 function breakEven(T){
@@ -2929,13 +2967,29 @@ function mixBlock(list){
   (mc.rows.length?'<div class="mixh">By chain</div>'+donut(mc)+mixList(mc):'')+
   '</div>';
 }
+/* The stretch a panel is looking at, and the controls to move it — the same
+   `per` and `anchor` the hero uses, because rule 7 says one period drives
+   everything visible and a panel with a private one would be a second.
+   It exists because the panels open as a sheet over the hero: the M/W toggle
+   and the ‹ › are still there, behind the thing covering them, so a month was
+   only changeable by closing the analysis you were reading. */
+function perBar(){
+ return'<div class="pbar">'+
+  '<button type="button" data-pstep="-1" aria-label="Previous">\u2039</button>'+
+  '<b>'+esc(perLabel(0))+'</b>'+
+  '<button type="button" data-pstep="1" aria-label="Next"'+
+   (perRange(1)[0]>new Date()?' disabled':'')+'>\u203a</button>'+
+  '<div class="mseg" style="margin:0 0 0 auto">'+
+   '<button data-sper="w"'+(per==='w'?' class="on"':'')+'>Week</button>'+
+   '<button data-sper="m"'+(per==='m'?' class="on"':'')+'>Month</button></div></div>';
+}
 function insHtml(){
  var P=periodTx(0),T=totals(P);
  var scoped=sc(S.tx.filter(inScope),null);
  if(!P.length){
   /* nothing this period, but the all-time mix is still worth showing */
-  var head='<p class="tiny" style="padding:10px 0 20px">Nothing in '+esc(perLabel(0))+' yet'+(brandView?' for '+esc(brandView):'')+'. Log a few entries and the analysis appears here \u2014 automatically.</p>';
-  return head+(mixAll?mixBlock(scoped):'');
+  var head='<p class="tiny" style="padding:10px 0 20px">Nothing in '+esc(perLabel(0))+' yet'+(brandView?' for '+esc(brandView):'')+'. Step back with \u2039 above, or log a few entries and the analysis appears here \u2014 automatically.</p>';
+  return perBar()+head+(mixAll?mixBlock(scoped):'');
  }
  var Pp=periodTx(-1),Tp=totals(Pp),hasPrev=Pp.length>0;
  function group(list,valf){
@@ -2991,11 +3045,18 @@ function insHtml(){
    eff+='<div class="kv"><span>On pace for<div class="s">Day '+elapsed+' of '+totalD+' \u00b7 simple projection</div></span><b class="'+(proj>=0?'pos':'neg')+'">'+usdc(proj)+'</b></div>';
   }
  }
- return'<p class="tiny" style="margin-top:4px">'+esc(brandView||'All brands')+' \u00b7 '+esc(perLabel(0))+' \u00b7 updates automatically</p>'+
+ return perBar()+
+  '<p class="tiny" style="margin-top:8px">'+esc(brandView||'All brands')+' \u00b7 updates automatically</p>'+
   (gin.tot?'<div class="sec"><h3>Where money came from</h3>'+bars(gin,false)+'</div>':'')+
   (gout.tot?'<div class="sec"><h3>Where money went</h3>'+
    (T.gi>0?'<div class="mseg"><button data-cshare="spend"'+(costOf==='income'?'':' class="on"')+'>% of spend</button>'+
-    '<button data-cshare="income"'+(costOf==='income'?' class="on"':'')+'>% of money in</button></div>':'')+
+    '<button data-cshare="income"'+(costOf==='income'?' class="on"':'')+'>% of money in</button></div>'+
+    /* The only thing this switch changes is a small grey percentage and a bar
+       width, so with nothing naming the number it divides by, the two sides
+       read as the same screen twice. Say the divisor out loud. */
+    '<p class="tiny" style="margin:8px 0 2px">Each share out of <b>'+
+     usdc(costOf==='income'?T.gi:gout.tot)+'</b> '+
+     (costOf==='income'?'that came in':'that went out')+'.</p>':'')+
    bars(gout,true,(costOf==='income'&&T.gi>0)?T.gi:0)+'</div>':'')+
   calSec()+
   capSec(T)+
@@ -3713,7 +3774,7 @@ function dataHtml(){
 
 /* global events */
 document.addEventListener('click',function(e){
- var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-fixfee],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-seed],[data-mix],[data-mixby],[data-sper],[data-cshare],[data-rate],[data-sync],[data-cli],[data-team],[data-shill],[data-tcopy],[data-lock]');
+ var el=e.target.closest('[data-ed],[data-add],[data-reset],[data-jump],[data-flt],[data-flt2],[data-recur],[data-fixfee],[data-panel],[data-wipe],[data-tg],[data-payall],[data-rm],[data-push],[data-csv],[data-bk],[data-bks],[data-rs],[data-seed],[data-mix],[data-mixby],[data-sper],[data-pstep],[data-calday],[data-cshare],[data-rate],[data-sync],[data-cli],[data-team],[data-shill],[data-tcopy],[data-lock]');
  if(!el)return;
  var d=el.dataset;
  if(d.lock!==undefined){
@@ -3751,7 +3812,11 @@ document.addEventListener('click',function(e){
   }
   render();repaint();return;   /* the hero shares the period, so it repaints too */
  }
+ if(d.pstep!==undefined){calDay=0;step(+d.pstep);repaint();return;}
  if(d.cshare!==undefined){costOf=d.cshare;repaint();return;}
+ /* tapping the same day again puts it away, so the grid is never stuck open
+    on a day nobody is looking at any more */
+ if(d.calday!==undefined){var cd=+d.calday;calDay=(calDay===cd)?0:cd;repaint();return;}
  if(d.sync!==undefined){
   if(syncCfg().none){syncCfg().none=0;save();}      /* asked by hand: try again */
   if(!syncOn()){toast(S.lockHash?'No sync server for this copy':'Set an access code first \u2014 it is the key');return;}

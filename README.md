@@ -293,6 +293,7 @@ BASE=http://127.0.0.1:8123/ node test/landing.mjs
 BASE=http://127.0.0.1:8123/ node test/rules.mjs
 BASE=http://127.0.0.1:8123/ node test/brands.mjs
 BASE=http://127.0.0.1:8123/ node test/shill.mjs
+BASE=http://127.0.0.1:8123/ node test/insights.mjs
 
 node test/update.mjs                    # starts and tears down its own server
 node test/sync.mjs                      # and its own sync service
@@ -377,6 +378,23 @@ one brand. The rest opens a person in the Commission panel and reads their
 statement against the ledger — earned, owed, one line per deal, the revenue
 they touched, and their **effective rate** measured against the default agreed
 with them — then copies it as text he can send them.
+
+`insights.mjs` (23 checks) covers the three things ALFA could not read off
+that panel, which were the same fault in three places: the screen held the
+answer and never said it out loud. The **% of spend / % of money in** switch
+changed a small grey percentage and a bar width and nothing else, so both
+sides read as the same screen twice — it now names the figure each share is
+out of, and the suite checks the two bases differ, that the amounts hold still
+while only the percentages move, and that a share of money in is never the
+larger of the two. The **day-by-day calendar** put each day's figure in a
+`title`, which is a hover, and a phone has none — every day with money on it
+is a button now, and the suite checks no figure is left in a title, that
+tapping one spells the day out and agrees with it, and that tapping it again
+puts it away. And the **period** lived on the hero, behind the sheet covering
+it, so a month could only be changed by closing the analysis: the panel
+carries its own ‹ › and Week/Month now, and the suite checks the hero moves
+with it rather than against it — it is the app's one period (rule 7), not a
+second one owned by this screen.
 
 `shill.mjs` (40 checks) covers the *Shill team* screen, which had none. The card
 used to count one half of the arrangement: a team that brought in $1,322 and was

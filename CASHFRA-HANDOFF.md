@@ -117,6 +117,10 @@ If you refactor, walk this list on mobile viewport before shipping.
 needs no browser, no server and no npm, so it runs anywhere — including on the
 VPS before a deploy. Nothing here ships to the server.
 
+- The **day-by-day calendar** puts every day with money on it in a `<button>`, and the day tapped is spelled out in a line under the grid. It used to carry each figure in a `title`, which is a hover — so on the phone this app is designed for, the one thing the grid exists to tell you could not be read at all. Days with nothing on them stay `<i>`: there is nothing to tap them for. `calDay` is the day picked, cleared by `step()` because a day picked in one month means nothing in the next, and tapping the same day again clears it rather than leaving the grid stuck open.
+- The **% of spend / % of money in** switch names the figure it divides by, under the toggle. Without that, the only thing it changed was a small grey percentage and a bar width, and the two sides read as the same screen twice — which is exactly how it was reported.
+- **`perBar()`** is the period a panel is looking at, and the ‹ › and Week/Month to move it. It drives the app's own `per`/`anchor` (rule 7 — one period drives everything visible), and the hero repaints with it. It exists because the panels open as a sheet *over* the hero: its controls are still there, behind the thing covering them, so the month could only be changed by closing the analysis being read. Give it to a panel by rendering `perBar()` at the top; do not give a panel a period of its own.
+
 ## Known limitations (by design — do not "fix" without asking ALFA)
 
 - claude.ai storage and standalone localStorage are **separate stores**; migration is manual via Backup/Restore JSON.

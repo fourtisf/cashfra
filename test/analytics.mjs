@@ -177,9 +177,13 @@ await closePanel();
 
 // ══ 4b. day-by-day calendar ══════════════════════════════════════════════
 await insights();
-const cal = await page.$$eval('#pBody .cal i', cells => cells.map(c => ({
+/* A day with money on it is a button, so it can be tapped for its figure —
+   a title attribute is a hover, and the phone this is designed for has none.
+   Both shapes are read here: the grid is still one cell per day. */
+const cal = await page.$$eval('#pBody .cal > *', cells => cells.map(c => ({
   day: c.textContent.trim(), empty: c.classList.contains('e'),
-  bg: c.style.background || '', title: c.getAttribute('title') || '' })));
+  bg: c.style.background || '', tappable: c.tagName === 'BUTTON',
+  label: c.getAttribute('aria-label') || '' })));
 const days = cal.filter(c => !c.empty);
 const monthLen = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
 check(days.length === monthLen, `one cell per day of the month (${days.length} of ${monthLen})`);
@@ -187,7 +191,8 @@ check(cal.length % 7 === 0 || cal.length >= monthLen, `grid starts on the right 
 const tinted = days.filter(c => c.bg);
 check(tinted.length > 0 && tinted.length < days.length, `only days with movement are tinted (${tinted.length} of ${days.length})`);
 check(tinted.every(c => /14, 159, 79|229, 72, 77/.test(c.bg)), 'money in tints green, money out red');
-check(days.every(c => /·/.test(c.title)), 'every day carries its own figure');
+check(days.every(c => c.bg ? /\$/.test(c.label) : true), 'every day with money carries its own figure');
+check(tinted.every(c => c.tappable), 'and can be tapped for it, rather than hiding it in a hover');
 
 // ══ 4c. break-even, concentration, deal spread ═══════════════════════════
 const eff = await page.$$eval('#pBody .sec', secs => {
