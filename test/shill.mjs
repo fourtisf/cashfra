@@ -371,6 +371,33 @@ await page.click('#fSave'); await page.waitForTimeout(600);
 check(!/below zero/.test(await page.locator('#alert').innerText()),
       'and it is gone once the book is clean');
 
+// ══ 10. saying which fault it is, where it is being made ════════════════
+/* ALFA read "fee error" on a listing with two shillers on it and concluded
+   the app would not take two people. It takes as many as he wants — the minus
+   is the fault, and a number turning red does not say which of those it is.
+   So the form says it in words, on the row being edited. */
+await patch({ tx: [legacy] });
+await page.click('#alert [data-fixfee]');
+await page.waitForTimeout(700);
+const warn = await page.locator('#comWarn').innerText();
+check(/windy/.test(warn) && /-10%/.test(warn), `the hint names who and what: "${warn}"`);
+check(/[Tt]wo people on one listing is fine/.test(warn),
+      'and says plainly that two people is not what it is objecting to');
+check(await page.locator('#comWarn [data-cfix]').count() === 1, 'and offers the edit that was probably meant');
+
+await page.click('#comWarn [data-cfix]');
+await page.waitForTimeout(400);
+const pcts = await page.locator('#comRows [data-cf="pct"]').evaluateAll(e => e.map(x => x.value));
+check(pcts.join('/') === '10/10', `tapping it flips the sign rather than dropping the person (${pcts.join(' / ')})`);
+check(await page.locator('#comWarn').evaluate(e => e.classList.contains('hide')), 'and the hint goes with it');
+check(/2 people/.test(await page.locator('#accSum').textContent()),
+      `the summary counts them both once it adds up: "${(await page.locator('#accSum').textContent()).trim()}"`);
+
+await page.click('#fSave'); await page.waitForTimeout(600);
+const fixedRow = await page.locator('.row', { hasText: '$LEGACYNEG' }).first().innerText();
+check(/by keya 10%, windy 10%/.test(fixedRow) && /fee −\$29\.68 · 20%/.test(fixedRow) && !/fee error/.test(fixedRow),
+      `and the listing carries both of them, flag gone: "${fixedRow.replace(/\n/g, ' · ')}"`);
+
 await browser.close();
 report();
 if (bad.length) process.exit(1);

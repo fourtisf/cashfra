@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-10-10">
+<meta name="cashfra-build" content="2026-09-10-11">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -633,6 +633,7 @@ body.locked{overflow:hidden}
         <summary>More details<span class="s" id="accSum"></span><span class="chev">&#9662;</span></summary>
         <div class="fr" id="rComs"><label>Commission &middot; % only, the USD is calculated for you</label>
           <div id="comRows"></div>
+          <div class="hint hide" id="comWarn"></div>
           <button type="button" class="bs" id="comAdd" style="font-size:12.5px;padding:7px 13px">+ Add person</button>
           <datalist id="dlTeam"></datalist>
         </div>
@@ -1686,6 +1687,34 @@ $('#comRows').addEventListener('click',function(e){
  fComs.splice(+b.dataset.crm,1);
  renderComs();calc();
 });
+/* A red number is a colour, not a reason, and the wrong reason is easy to
+   reach from it: ALFA saw "fee error" on a listing with two shillers on it
+   and read it as the app refusing two people. It takes as many as he wants —
+   what it will not take is a share below zero. So this says which of those it
+   is, names who, and offers the edit that was almost certainly meant.
+
+   An offer, on the row he is already editing, and not the silent repair the
+   notice deliberately does not do: -10 could have meant 10, or could have
+   meant she gets nothing at all, and only he knows which. Tapping it is him
+   choosing, the way "use this amount" already works on the owed hint. */
+function comWarn(){
+ var el=$('#comWarn');if(!el)return;
+ var i=badComIdx();
+ if(i<0){el.classList.add('hide');el.innerHTML='';return;}
+ var c=fComs[i],p=num(c.pct),who=String(c.to||'').trim();
+ el.classList.remove('hide');
+ el.innerHTML=(who?esc(who)+' is':'That row is')+' on <b style="color:var(--out)">'+pctf(p)+'%</b>'+
+  ' \u2014 nobody is owed a commission below zero. Two people on one listing is'+
+  ' fine; a minus is not.'+
+  (p<0?' \u00b7 <span data-cfix="'+i+'" style="color:var(--brand);font-weight:700;cursor:pointer">make it '+pctf(-p)+'%</span>':'');
+}
+$('#comWarn').addEventListener('click',function(e){
+ var b=e.target.closest('[data-cfix]');if(!b)return;
+ var i=+b.dataset.cfix,c=fComs[i];if(!c)return;
+ c.pct=Math.abs(num(c.pct));
+ renderComs();calc();
+ focusCom(i);          /* back in the field, so a different number is one edit away */
+});
 function linkOpen(){
  var v=$('#fLink').value.trim(),el=$('#linkOpen');
  if(/^https?:\/\/\S+$/i.test(v)){
@@ -2226,6 +2255,7 @@ function calc(){
  if($('#fRecur').checked)b.push('monthly');
  $('#accSum').textContent=b.length?('\u00b7 '+b.join(' \u00b7 ')):'';
  $('#rPaid').classList.toggle('hide',$('#fStat').value!=='dp');
+ comWarn();
  rateHint();
  dupHint();
  cashOnly(true);        /* calc runs on every keystroke; it must not overrule a choice */
