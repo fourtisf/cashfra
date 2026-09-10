@@ -73,13 +73,20 @@ const gc = [...new Set([...Object.keys(A), ...Object.keys(P)])]
   .reduce((s, k) => s + Math.max(A[k] || 0, P[k] || 0), 0);
 const direct = mine.filter(t => t.type === 'out' && SHILL_PAY.includes(t.cat))
   .reduce((s, t) => s + +t.usd, 0);
-/* one recipient is unambiguous, two are a guess — the app credits only the first */
-const broughtBy = t => {
-  const v = String(t.by || '').trim(); if (v) return v;
-  const c = (t.coms || []).filter(x => String(x.to || '').trim() && +x.usd > 0);
-  return c.length === 1 ? String(c[0].to).trim() : '';
+/* Who brought a listing is read off the commission on it, and nothing else.
+   Two names share it, split by what each earned. */
+const fees = t => {
+  const by = {}; let sum = 0;
+  (t.coms || []).forEach(c => {
+    const n = String(c.to || '').trim(), v = +c.usd || 0;
+    if (!n || v <= 0) return;
+    by[n.toLowerCase()] = (by[n.toLowerCase()] || 0) + v; sum += v;
+  });
+  return { by, sum };
 };
-const brought = mine.filter(t => t.type === 'in' && broughtBy(t)).reduce((s, t) => s + recv(t), 0);
+const credited = t => t.type === 'in' && fees(t).sum > 0;
+const shareOf = (t, who) => { const f = fees(t); return f.sum > 0 ? (f.by[who.toLowerCase()] || 0) / f.sum : 0; };
+const brought = mine.filter(credited).reduce((s, t) => s + recv(t), 0);
 const cost = gc + direct;
 const near = (a, b) => Math.abs(a - b) < 0.02;
 
@@ -117,7 +124,10 @@ const allDirect = S.tx.filter(t => (t.brand === brand || t.brand === '*') && t.t
   .reduce((s, t) => s + +t.usd, 0);
 check(allDirect > direct, `all-time reaches a payment this month does not (${allDirect.toFixed(2)} vs ${direct.toFixed(2)})`);
 check(money(allTot[1]) > money(tot3[1]), `so All widens the cost too, not only the takings: ${allTot[1]} vs ${tot3[1]}`);
-check(near(money(allTot[2]), money(allTot[0]) - money(allTot[1])), `and the net still holds: ${allTot[2]}`);
+/* a dollar of slack, not a cent: above $1,000 the card drops the decimals,
+   so the three figures are read back rounded and cannot reconcile exactly */
+check(Math.abs(money(allTot[2]) - (money(allTot[0]) - money(allTot[1]))) < 1,
+      `and the net still holds: ${allTot[0]} − ${allTot[1]} = ${allTot[2]}`);
 
 // ══ 4. a day with nothing credited still owns up to what was paid ════════
 await page.click('#pBody [data-sper="d"]'); await page.waitForTimeout(300);
@@ -139,10 +149,10 @@ const one = await page.locator('#pBody').innerText();
 check(/Kept after what they cost/.test(one), `${who}'s page states what is left after they are paid`);
 /* against the ledger, not against two scraped rows: the point of the row is
    that all three ways money reaches this person are taken off, once each */
-const theirs = S.tx.filter(t => (t.brand === brand || t.brand === '*') && t.type === 'in'
-                             && broughtBy(t).toLowerCase() === who.toLowerCase());
-const theirIn = theirs.reduce((s, t) => s + recv(t), 0);
-const theirFee = theirs.reduce((s, t) => s + comv(t), 0);
+const theirs = S.tx.filter(t => (t.brand === brand || t.brand === '*') && credited(t)
+                             && shareOf(t, who) > 0);
+const theirIn = theirs.reduce((s, t) => s + recv(t) * shareOf(t, who), 0);
+const theirFee = theirs.reduce((s, t) => s + (fees(t).by[who.toLowerCase()] || 0), 0);
 const theirDirect = S.tx.filter(t => (t.brand === brand || t.brand === '*') && t.type === 'out'
       && SHILL_PAY.includes(t.cat) && String(t.party || '').trim().toLowerCase() === who.toLowerCase())
   .reduce((s, t) => s + +t.usd, 0);
@@ -168,7 +178,7 @@ const patch = async o => {
 const day = new Date().toISOString().slice(0, 10);
 const pair = {
   id: 'pairdeal', brand, date: day, type: 'in', cat: 'Listing', pkg: 'Listing', chain: 'SOL',
-  party: '$SPLIT', by: 'Michael, Shiller 1', amt: 1, tok: 'USDT', rate: 200, usd: 200,
+  party: '$SPLIT', amt: 1, tok: 'USDT', rate: 200, usd: 200,
   status: 'paid', paid: 200, mt: Date.now(),
   coms: [{ to: 'Michael', pct: 15, usd: 30, paid: false }, { to: 'Shiller 1', pct: 5, usd: 10, paid: false }]
 };
@@ -203,38 +213,34 @@ const dpTxt = await page.locator('.row', { hasText: '$PARTIAL' }).first().innerT
 check(/of \$200/.test(dpTxt) && /fee −\$40/.test(dpTxt),
       `part-paid says both what landed and what the team takes: "${dpTxt.replace(/\n/g, ' · ')}"`);
 
-// an even split when there is no commission to weigh them by
+/* No commission means nobody worked it as far as the book is concerned, so
+   the deal is uncredited rather than credited to a guess. */
 await patch({ tx: [...S.tx, { ...pair, id: 'evendeal', party: '$EVEN', coms: [] }] });
 await openShill();
 await page.click('#pBody [data-sper="d"]'); await page.waitForTimeout(300);
 const evenTxt = await page.locator('#pBody').innerText();
-const em = new RegExp('Michael\\n[^\\n]*\\n(-?\\$[\\d,.]+)').exec(evenTxt);
-check(em && near(money(em[1]), 100), `no commission to weigh them by means an even split: ${em ? em[1] : '?'}`);
+check(/Not credited to anyone|Nobody brought a listing/.test(evenTxt),
+      'a listing with no commission is not credited to anyone');
+check(!/Michael/.test(evenTxt), 'and nobody is invented for it');
 await closePanel();
 
-// ══ 7. Added by fills the commission it implies ══════════════════════════
-/* Naming the shiller and leaving the fee blank was the commonest way for a
-   deal to end up with somebody credited and nothing owed to them. */
+// ══ 7. the commission row is the whole of it ════════════════════════════
+/* There was an `Added by` field beside the commission and it was the same
+   people typed twice — credited without a fee, or paid without the credit,
+   depending which of the two you filled. It is gone: a name with money
+   against it is credited, and that is the only rule. */
 await patch({ tx: S.tx, team: [['Michael', 15], ['Shiller 1', 10], ['keya', 8], ['windy', 7]] });
+check(await page.locator('#fBy').count() === 0, 'the second place to name a shiller is gone from the form');
 await page.click('#addBtn2'); await page.waitForSelector('#ovForm.on'); await page.waitForTimeout(250);
-await page.fill('#fBy', 'keya');
-await page.locator('#fParty').click();               // blur it, the way a thumb would
-await page.waitForTimeout(300);
-check(await page.locator('#acc').evaluate(e => e.open), 'the commission section opens itself, so the fee is seen');
-check(await page.inputValue('#comRows [data-cf="to"]') === 'keya', 'a row is filled in for the person named');
-check(await page.inputValue('#comRows [data-cf="pct"]') === '8', "at the default agreed with them (8%)");
-await page.fill('#fAmt', '100'); await page.fill('#fRate', '1'); await page.waitForTimeout(250);
+await page.fill('#fAmt', '100'); await page.fill('#fRate', '1');
+await page.locator('#acc').evaluate(e => { e.open = true; });
+await page.click('#comAdd'); await page.waitForTimeout(200);
+await page.locator('#comRows [data-cf="to"]').first().fill('keya');
+await page.locator('#comRows [data-cf="to"]').first().dispatchEvent('input');
+await page.waitForTimeout(250);
+check(await page.locator('#comRows [data-cf="pct"]').first().inputValue() === '8',
+      'typing a team name still brings their default % with it');
 check(/8/.test(await page.locator('#comRows .cu').first().textContent()), 'and the USD follows the amount');
-
-// somebody the team list has never heard of still gets a row to type into
-await page.fill('#fBy', 'keya, ghost');
-await page.locator('#fParty').click(); await page.waitForTimeout(300);
-const names = await page.locator('#comRows [data-cf="to"]').evaluateAll(e => e.map(x => x.value));
-const pcts = await page.locator('#comRows [data-cf="pct"]').evaluateAll(e => e.map(x => x.value));
-check(names.includes('ghost'), `a name with no default still gets a row (${names.join(', ')})`);
-check(pcts[names.indexOf('ghost')] === '', 'left empty, waiting for the % rather than inventing one');
-const ghostHint = (await page.locator('#byHint').textContent()).trim();
-check(/ghost/.test(ghostHint) && /type it/i.test(ghostHint), `and says where to type it: "${ghostHint}"`);
 
 // ── a minus typed into a % cancels the fee, silently, unless it is refused ──
 /* 10 and -10 across two people sum to nothing: the entry saves with no fee
@@ -242,8 +248,12 @@ check(/ghost/.test(ghostHint) && /type it/i.test(ghostHint), `and says where to 
 await page.click('#fX'); await page.waitForTimeout(200);          // a clean form
 await page.click('#addBtn2'); await page.waitForSelector('#ovForm.on'); await page.waitForTimeout(250);
 await page.fill('#fAmt', '100'); await page.fill('#fRate', '1');
-await page.fill('#fBy', 'keya, windy');
-await page.locator('#fParty').click(); await page.waitForTimeout(300);
+await page.locator('#acc').evaluate(e => { e.open = true; });
+for (const who of ['keya', 'windy']) {
+  await page.click('#comAdd'); await page.waitForTimeout(150);
+  const last = page.locator('#comRows [data-cf="to"]').last();
+  await last.fill(who); await last.dispatchEvent('input'); await page.waitForTimeout(150);
+}
 const pctFields = page.locator('#comRows [data-cf="pct"]');
 await pctFields.nth(0).fill('10');
 await pctFields.nth(1).fill('-10');
@@ -265,14 +275,10 @@ check(!await page.locator('#ovForm').evaluate(e => e.classList.contains('on')),
 const negRow = await page.locator('.row', { hasText: '$NEGFEE' }).first().innerText();
 check(/fee −\$20\.00 · 20%/.test(negRow), `both halves of the fee land: "${(negRow.match(/fee[^\n]*/) || [])[0]}"`);
 
-// two names in one box is one person to the app — it says so rather than guessing
-await page.click('#addBtn2'); await page.waitForSelector('#ovForm.on'); await page.waitForTimeout(250);
-await page.fill('#fBy', 'keya windy');
-await page.locator('#fParty').click(); await page.waitForTimeout(300);
-const byHint = (await page.locator('#byHint').textContent()).trim();
-check(await page.locator('#byHint').isVisible() && /keya, windy/.test(byHint),
-      `two names in one box is caught, not split on a guess: "${byHint}"`);
-await page.click('#fX'); await page.waitForTimeout(200);
+/* Two people on one deal is now two commission rows and nothing else to get
+   wrong — no box to type both names into, no separator to remember. */
+const twoNames = await page.locator('.row', { hasText: '$NEGFEE' }).first().innerText();
+check(/by keya, windy/.test(twoNames), `two rows read as two people: "${twoNames.replace(/\n/g, ' · ')}"`);
 
 await browser.close();
 report();

@@ -378,7 +378,7 @@ statement against the ledger — earned, owed, one line per deal, the revenue
 they touched, and their **effective rate** measured against the default agreed
 with them — then copies it as text he can send them.
 
-`shill.mjs` (43 checks) covers the *Shill team* screen, which had none. The card
+`shill.mjs` (40 checks) covers the *Shill team* screen, which had none. The card
 used to count one half of the arrangement: a team that brought in $1,322 and was
 paid $1,500 for it read as $1,322, and nothing on the screen disagreed. So the
 suite computes the month's own arithmetic — rule 6's netted commission, plus the
@@ -395,18 +395,23 @@ The rest of it is two people bringing one listing. That is one listing and one
 sum of money, so the suite logs a $200 deal carried by two — commission 30 and
 10 — and checks the board gives them $150 and $50, that the two add back to
 $200 rather than past it, that the header still says *1 listing* and not two,
-and that with no commission to weigh them by the split falls to even. It also
-checks the Activity row names them beside the fee, writes that fee as a
-subtraction carrying the rate it works out at (a part-paid listing keeps it
-too, where the status used to crowd it out), that typing a shiller into
-**Added by** fills their commission at the default agreed with them — and
-still opens a row, empty and waiting for the %, for somebody the team list has
-never heard of — and opens the section so it is seen, and that two names typed into one box is caught and
-said out loud instead of being split on a guess about spaces. It ends on the
-slip that sent this whole thread round twice: a minus typed into one of two
-commission rows, which cancels the other and saves a deal that reads like it
-never had a fee. That is refused on save now, and the suite checks it is
-refused, says why, and goes through once the minus is gone.
+A listing with no commission at all is credited to nobody
+rather than to a guess. It also checks the Activity row names them beside the
+fee and writes that fee as a subtraction carrying the rate it works out at,
+with a part-paid listing keeping it too, where the status used to crowd it out.
+
+The rest is what happened when that screen had **two** places to name a
+shiller. An `Added by` field sat beside the commission and they were the same
+people typed twice: naming somebody there earned them nothing, earning a
+commission did not credit them unless the field agreed, and two names crammed
+into one box read as one person. It is gone — the commission line is the whole
+record now — so the suite checks the field is really absent and that two
+commission rows read as two people on the row.
+
+It ends on the slip that sent this thread round twice: a minus typed into one
+of two commission rows, which cancels the other and saves a deal that reads
+like it never had a fee. That is refused on save now, and the suite checks it
+is refused, says why, and goes through once the minus is gone.
 
 `update.mjs` (7 checks) ships a second build mid-run and verifies the handover
 described under *Redeploying*.
