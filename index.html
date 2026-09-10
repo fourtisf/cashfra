@@ -133,7 +133,7 @@ button,label.sw,.row,.gk{cursor:pointer;-webkit-tap-highlight-color:transparent;
 .rl{flex:1;min-width:0}
 .rt{font-size:14.5px;font-weight:600;display:flex;align-items:center;gap:7px;letter-spacing:-.005em}
 .rt em{font-style:normal;color:var(--faint);font-weight:500}
-.rs{font-size:12.5px;color:var(--faint);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rs{display:block;font-size:12.5px;color:var(--faint);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rv{text-align:right;flex:none}
 .rv .a{display:block;font-family:var(--disp);font-size:15.5px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;letter-spacing:-.01em}
 .rv .a.u{color:var(--faint);text-decoration:line-through;text-decoration-color:rgba(166,166,178,.55);text-decoration-thickness:1.5px;font-weight:700}
@@ -1319,10 +1319,19 @@ function row(t){
  var meta=[t.cat];
  if(t.brand===SHARED)meta.unshift(brandView?'shared \u00b7 '+Math.round(num(t.share)*100)+'%':'shared');
  else if(!brandView&&t.brand)meta.unshift(t.brand);
- /* who brought it, next to what it was — the fee on the right says what they
-    earned, and this says who earned it. Second, so the ellipsis on a narrow
+ /* who brought it and what they are on, next to what it was — the fee on
+    the right says what the team costs in dollars, and this says who is on it
+    and for how much of the deal each. A bare name made you open the entry to
+    find out the rate, and on two names it hid the split completely: 15 and 5
+    read the same as 10 and 10. Worked off the money like the fee line is, so
+    a deal edited down after the rate was agreed reads what the team really
+    costs it now, not what was typed then. Second, so the ellipsis on a narrow
     phone eats the coin amount before it eats a name. */
- var by=broughtList(t).map(function(b){return b.name;}).join(', ');
+ var deal=num(t.usd);
+ var by=broughtList(t).map(function(b){
+  var bp=deal?b.com/deal*100:0;
+  return b.name+(bp?' '+pctf(bp)+'%':'');
+ }).join(', ');
  if(by)meta.push('by '+by);
  if(inc&&t.chain)meta.push(t.chain);
  meta.push(tokf(num(t.amt))+' '+t.tok);

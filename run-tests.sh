@@ -13,7 +13,7 @@ set -u
 cd "$(dirname "$0")"
 
 PORT=${PORT:-8123}
-BROWSER_SUITES='smoke rates features analytics landing rules brands'
+BROWSER_SUITES='smoke rates features analytics landing rules brands shill'
 OWN_SERVER_SUITES='update sync code-login'
 fail=0
 out=$(mktemp)

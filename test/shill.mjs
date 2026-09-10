@@ -199,13 +199,27 @@ check(mi && /shared/.test(mi.sub), `the row says it was shared: "${mi.sub}"`);
 await closePanel();
 
 const actTxt = await page.locator('.row', { hasText: '$SPLIT' }).first().innerText();
-check(/by Michael, Shiller 1/.test(actTxt), `the Activity row names who brought it: "${actTxt.replace(/\n/g, ' · ')}"`);
+check(/by Michael 15%, Shiller 1 5%/.test(actTxt), `the Activity row names who brought it, and what each is on: "${actTxt.replace(/\n/g, ' · ')}"`);
+/* 30 and 10 off the same $200, not 20 and 20 — a split the row used to hide
+   behind two bare names, and the one number a shiller checks first. */
+check(!/by Michael 10%, Shiller 1 10%/.test(actTxt), 'the two rates are the split, not the average of it');
 /* written as a subtraction: "+$200.00" with "fee $40" under it reads like two
    sums the deal earned, which is the misreading the minus removes */
 check(/fee −\$40/.test(actTxt), `and the fee under it is a subtraction: "${(actTxt.match(/fee[^\n]*/) || [])[0]}"`);
 /* 30 + 10 off a $200 deal — the rate, so the size of the cut is readable
    without doing the division in your head */
 check(/fee −\$40\.00 · 20%/.test(actTxt), 'and carries the rate it works out at');
+
+/* Both halves have to fit on one row of a phone. The meta line is a <span>,
+   and overflow/text-overflow do nothing to an inline box — so it never
+   clipped: it ran on under the fee on the right and the two read as one
+   mangled line. Measured, because it renders as ordinary text either way. */
+const clipped = await page.locator('.row', { hasText: '$SPLIT' }).first().evaluate(el => {
+  const rs = el.querySelector('.rs'), rv = el.querySelector('.rv');
+  return { over: rs.getBoundingClientRect().right - rv.getBoundingClientRect().left, ell: getComputedStyle(rs).display };
+});
+check(clipped.over <= 0.5, `the meta line stops at its own column instead of running under the fee (${clipped.over.toFixed(1)}px past it)`);
+check(clipped.ell !== 'inline', `and is a block, so the ellipsis it relies on can happen at all (display: ${clipped.ell})`);
 
 // a part-paid listing keeps its fee too — that line used to lose it to the status
 await patch({ tx: [...S.tx, { ...pair, id: 'dpdeal', party: '$PARTIAL', status: 'dp', paid: 80 }] });
@@ -278,7 +292,7 @@ check(/fee −\$20\.00 · 20%/.test(negRow), `both halves of the fee land: "${(n
 /* Two people on one deal is now two commission rows and nothing else to get
    wrong — no box to type both names into, no separator to remember. */
 const twoNames = await page.locator('.row', { hasText: '$NEGFEE' }).first().innerText();
-check(/by keya, windy/.test(twoNames), `two rows read as two people: "${twoNames.replace(/\n/g, ' · ')}"`);
+check(/by keya 10%, windy 10%/.test(twoNames), `two rows read as two people on 10% each: "${twoNames.replace(/\n/g, ' · ')}"`);
 
 await browser.close();
 report();
