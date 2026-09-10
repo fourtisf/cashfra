@@ -59,7 +59,12 @@ await page.waitForTimeout(600);
 // ══ 1. stale price hint ══════════════════════════════════════════════════
 await page.click('#addBtn2'); await page.waitForSelector('#ovForm.on');
 await page.waitForTimeout(200);
-check(await page.locator('#rateHint').isHidden(), 'fresh prices say nothing in the form');
+/* The rate box is the one number in this form the app filled in itself, so it
+   always says where that number came from — silence used to mean "fresh",
+   which is indistinguishable from "the feed has never answered on this
+   device" right up until a deal is booked at the wrong price. */
+check(/Live SOL price/.test((await page.locator('#rateHint').textContent()).trim()),
+      'a fresh price says it is live');
 await page.click('#fX'); await page.waitForTimeout(200);
 
 /* a price only goes stale when the feed is actually failing, so fail it */
@@ -71,7 +76,8 @@ const hint = (await page.locator('#rateHint').textContent()).trim();
 check(await page.locator('#rateHint').isVisible() && /3 days ago/.test(hint), `feed down + old price is called out: "${hint}"`);
 await feedDown(page, false);
 await page.click('#rateHint [data-rate="now"]'); await page.waitForTimeout(900);
-check(await page.locator('#rateHint').isHidden(), 'refreshing from the hint clears it');
+check(/Live SOL price/.test((await page.locator('#rateHint').textContent()).trim()),
+      'refreshing from the hint clears the warning and says so');
 check(await page.inputValue('#fRate') === '190', 'the refreshed price lands in the rate box');
 await page.click('#fX'); await page.waitForTimeout(200);
 

@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-06-1">
+<meta name="cashfra-build" content="2026-09-10-1">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -105,6 +105,8 @@ button,label.sw,.row,.gk{cursor:pointer;-webkit-tap-highlight-color:transparent;
 .nt.gl .ibar{margin-top:7px}
 .nt .pcg{font-family:var(--disp);font-weight:800;font-size:16px;flex:none;font-variant-numeric:tabular-nums}
 .ratehint{font-size:12px;color:var(--amber);font-weight:600;margin-top:7px;line-height:1.5}
+/* amber is for a price that needs looking at; a live one says so quietly */
+.ratehint.ok{color:var(--in)}
 .ratehint button{color:var(--brand-ink);font-weight:700;font-size:12px;text-decoration:underline;padding:0}
 .duphint{font-size:12px;color:var(--amber);background:var(--amber-soft);border-radius:12px;
   padding:9px 12px;margin-top:9px;font-weight:600;line-height:1.5;text-align:left}
@@ -792,13 +794,19 @@ var DEF={v:3,tx:[],
  brands:['Fourtis','Dexvra'],
  brand:'Fourtis',
  idr:16300, last:{tok:'SOL',ch:'SOL'}, demo:false, recSkip:'', lockHash:'', lockSalt:'', lockLen:0, lockNum:true, lockPreset:'',
- rateAuto:true, rateAt:0, bkAt:0, goal:0, lockIdle:300, contacts:{}, caps:[], seedFix:'', del:{},
+ /* rateAt = the last round that came back; rateEach = when each coin's own
+    price last arrived, because a response that skips a coin must not mark it
+    checked; rateSrc = which feed answered, so Settings can say so. */
+ rateAuto:true, rateAt:0, rateEach:{}, rateSrc:'', bkAt:0, goal:0, lockIdle:300, contacts:{}, caps:[], seedFix:'', del:{},
  sync:{url:'',token:'',email:'',ver:0,at:0},
  wallets:[['SOL',''],['BSC',''],['ETH',''],['BASE',''],['TRON','']], invNote:''
 };
 var S=clone(DEF);
 var anchor=new Date(), flt='', editId=null, fType='in', fTokV='SOL', fChainV='SOL', fBrandV='', brandView='', formPkg='', panel='menu', undoBuf=null;
-var mixAll=false, ratePrefill='', rateBusy=false, hidAt=0, autoLocked=false, costOf='spend', cliOpen='', teamOpen='', shillOpen='', shillAll=false, shillDay=false;
+var mixAll=false, ratePrefill='', hidAt=0, autoLocked=false, costOf='spend', cliOpen='', teamOpen='', shillOpen='', shillAll=false, shillDay=false;
+/* price-feed health. Deliberately not in S: whether the feed answered is a
+   fact about this device right now, not something to persist or sync. */
+var rateErr=0, rateFails=0, rateNext=0, rateTick=null, ratePend=null;
 var syncBusy=false, syncMsg='', syncT=null, syncSaving=false;
 
 function clone(o){return JSON.parse(JSON.stringify(o));}
@@ -856,6 +864,7 @@ function load(){
     S.pkgs=clone(DEF.pkgs);
    }
    if(!S.brands||!S.brands.length)S.brands=clone(DEF.brands);
+   if(!S.rateEach||typeof S.rateEach!=='object')S.rateEach={};
    var fix=false;
    S.tx.forEach(function(t){if(!t.brand){t.brand=S.brands[0];fix=true;}});
    if(normalizeTx())fix=true;
@@ -1763,6 +1772,11 @@ function syncNow(quiet,retry){
     ['rates','pkgs','team','chains','brands','caps','wallets','contacts'].forEach(function(k){
      if(remote[k]!==undefined)S[k]=remote[k];
     });
+    /* Prices came over with the settings, and a device that has been shut in
+       a drawer for a week writes last just as easily as one used this morning.
+       They are numbers from somewhere else, not a check this device made, so
+       drop the freshness with them and let the next form ask the feed. */
+    if(remote.rates!==undefined){S.rateEach={};S.rateAt=0;S.rateSrc='';}
     if(remote.idr!==undefined)S.idr=remote.idr;
     if(remote.invNote!==undefined)S.invNote=remote.invNote;
     if(remote.goal!==undefined)S.goal=remote.goal;
@@ -1840,12 +1854,38 @@ function syncSoon(){
 /* live prices --------------------------------------------------------------
    This only ever writes S.rates and S.idr, which prefill the rate box on a
    NEW entry. Entries already logged keep the rate and the USD they were saved
-   with, forever — the books depend on that (CASHFRA-HANDOFF.md, rule 1). */
+   with, forever — the books depend on that (CASHFRA-HANDOFF.md, rule 1).
+
+   A listing is agreed in coin and booked in dollars, so the prefill is only
+   worth having if it is the price *now*. Four things stopped it being that,
+   and every one of them failed silently:
+
+     · one call every 30 minutes, and only on unlock or on opening the form.
+       Tapping a different coin chip never asked at all, so ETH could be
+       priced from whatever the last SOL entry happened to trigger;
+     · fetch() with no timeout. One request that never settled — the ordinary
+       fate of a request on a phone changing cell — left the in-flight flag
+       stuck on, and every price on the device froze until it was reloaded;
+     · one feed. CoinGecko's free endpoint answers a browser with 429 often
+       enough to matter, and a failure left the seed numbers (ETH 3000) in
+       the box looking exactly like a live quote;
+     · one timestamp for every coin, so a response that skipped a coin still
+       stamped it "checked just now".
+
+   Now: a short cache, a standby feed, a stamp per coin, a backoff instead of
+   a hammer, and a form that says how old the number under the amount is. */
 var COINS={SOL:'solana',BNB:'binancecoin',ETH:'ethereum',TRX:'tron',USDT:'tether',USDC:'usd-coin',
  BTC:'bitcoin',MATIC:'matic-network',POL:'polygon-ecosystem-token',AVAX:'avalanche-2',
  ARB:'arbitrum',OP:'optimism',TON:'the-open-network',SUI:'sui',APT:'aptos',NEAR:'near',
  ADA:'cardano',DOGE:'dogecoin',XRP:'ripple',LTC:'litecoin',DAI:'dai',BUSD:'binance-usd'};
-var RATE_TTL=18e5;   /* don't hit the feed more than once every 30 min */
+var RATE_TTL=3e4;    /* a price is reused for 30s; past that, ask again */
+var RATE_TICK=35e3;  /* and while the entry form is open, keep asking */
+var RATE_HINT=6e5;   /* 10 min — past this the form says how old the price is */
+var FEED_MS=8000;    /* no feed gets to hang the app */
+/* A feed that refused us wants a rest, not a retry every 30 seconds — but the
+   first failure is usually a blip while the phone changes network, so that one
+   gets a short rest and the rest get longer ones. */
+var FEED_BACK=[1e4,6e4,18e4,6e5];
 function tidyRate(v){
  if(!isFinite(v)||v<=0)return 0;
  /* a stablecoin trading at 0.9997 is oracle noise, not a price: a $350 fee
@@ -1860,42 +1900,171 @@ function relTime(ts){
  var h=Math.round(m/60);if(h<24)return h+(h===1?' hour ago':' hours ago');
  var d=Math.round(h/24);return d+(d===1?' day ago':' days ago');
 }
+/* One request, with a deadline. fetch() has no timeout of its own, and a
+   request that never settles is the difference between "the feed is slow"
+   and "this device shows the same price for the rest of the day".
+
+   The deadline is a race, not just an abort: aborting asks the network to
+   give up and depends on it agreeing, while the race is what guarantees this
+   promise settles — including on a WebView old enough to have no
+   AbortController at all. Both, so the socket is released as well. */
+function feedJson(url){
+ var ctl=(typeof AbortController==='function')?new AbortController():null;
+ var t=null;
+ var o={cache:'no-store'};
+ if(ctl)o.signal=ctl.signal;
+ var req=fetch(url,o).then(function(r){
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  return r.json();
+ });
+ var deadline=new Promise(function(_,rej){
+  t=setTimeout(function(){
+   if(ctl)try{ctl.abort();}catch(e){}
+   rej(new Error('timeout'));
+  },FEED_MS);
+ });
+ return Promise.race([req,deadline]).then(
+  function(j){clearTimeout(t);return j;},
+  function(e){clearTimeout(t);throw e;});
+}
+/* Feed 1 — every coin and the USD→IDR rate in a single call. */
+function feedGecko(syms){
+ var ids=[],seen={};
+ syms.forEach(function(s){var id=COINS[s];if(id&&!seen[id]){seen[id]=1;ids.push(id);}});
+ if(!seen.tether)ids.push('tether');      /* the "≈ Rp" line rides on USDT */
+ return feedJson('https://api.coingecko.com/api/v3/simple/price?ids='+ids.join(',')+'&vs_currencies=usd,idr')
+ .then(function(j){
+  var out={usd:{},idr:0,src:'CoinGecko'};
+  syms.forEach(function(s){
+   var id=COINS[s],v=(id&&j[id])?num(j[id].usd):0;
+   if(v>0)out.usd[s]=v;
+  });
+  var idr=j.tether?num(j.tether.idr):0;
+  if(idr>1000)out.idr=idr;
+  return out;
+ });
+}
+/* Feed 2 — the standby, asked only for what the first one could not answer.
+   No key, plain CORS, and up on the days CoinGecko is rate-limiting. It
+   answers 404 for a coin it does not list, which just means that coin stays
+   manual this round; one refusal must not lose the others. */
+function feedCoinbase(syms,wantIdr){
+ var out={usd:{},idr:0,src:'Coinbase'},jobs=[];
+ syms.slice(0,8).forEach(function(s){
+  jobs.push(feedJson('https://api.coinbase.com/v2/prices/'+encodeURIComponent(s)+'-USD/spot')
+   .then(function(j){var v=num(j&&j.data&&j.data.amount);if(v>0)out.usd[s]=v;})
+   ['catch'](function(){}));
+ });
+ if(wantIdr)jobs.push(feedJson('https://api.coinbase.com/v2/exchange-rates?currency=USD')
+  .then(function(j){var v=num(j&&j.data&&j.data.rates&&j.data.rates.IDR);if(v>1000)out.idr=v;})
+  ['catch'](function(){}));
+ if(!jobs.length)return Promise.resolve(out);
+ return Promise.all(jobs).then(function(){return out;});
+}
+function rateStamps(){
+ if(!S.rateEach||typeof S.rateEach!=='object')S.rateEach={};
+ return S.rateEach;
+}
+/* When was THIS coin's price last actually seen? Never counted as newer than
+   the last round that came back, so a coin the feed skipped cannot ride on a
+   later round it was not part of. 0 = never checked on this device. */
+function priceAt(sym){
+ var at=num(rateStamps()[sym]);
+ if(!at)return 0;
+ var round=num(S.rateAt);
+ return round?Math.min(at,round):at;
+}
+function applyPrices(got){
+ var n=0,now=Date.now(),st=rateStamps();
+ S.rates.forEach(function(r){
+  var v=tidyRate(num(got.usd[String(r[0]||'').toUpperCase()]));
+  if(!v)return;
+  st[r[0]]=now;                       /* this coin, seen just now */
+  if(v!==r[1]){r[1]=v;n++;}
+ });
+ if(got.idr>1000&&Math.round(got.idr)!==S.idr){S.idr=Math.round(got.idr);n++;}
+ return n;
+}
+/* Repaint whatever the new prices are showing through. The token pills live
+   in fillStatic, so it is skipped while the form is open — rebuilding them
+   under a tapped chip is exactly the kind of jump this app should not make. */
+function paintRates(changed){
+ if($('#ovForm').classList.contains('on')){
+  /* only refresh the box if it still holds what we put there — a rate typed
+     by hand is the owner's answer, not ours to overwrite */
+  if(!editId&&$('#fRate').value===ratePrefill)autoRate();
+  calc();
+ }else if(changed){fillStatic();render();}
+ if($('#ovPanel').classList.contains('on')&&panel==='set')repaint();
+}
 function fetchRates(force){
- if(rateBusy)return Promise.resolve(0);
+ if(ratePend)return ratePend;          /* one round in flight is enough */
+ var now=Date.now();
  if(!force){
   if(!S.rateAuto)return Promise.resolve(0);
-  if(Date.now()-num(S.rateAt)<RATE_TTL)return Promise.resolve(0);
+  if(now-num(S.rateAt)<RATE_TTL)return Promise.resolve(0);
+  if(now<rateNext)return Promise.resolve(0);      /* a refused feed gets its rest */
   /* never move the numbers out from under someone editing them */
   if(panel==='set'&&$('#ovPanel').classList.contains('on'))return Promise.resolve(0);
  }
  if(typeof fetch!=='function')return Promise.resolve(0);
- var ids=[],seen={};
+ var syms=[],seen={};
  S.rates.forEach(function(r){
-  var id=COINS[String(r[0]||'').toUpperCase()];
-  if(id&&!seen[id]){seen[id]=1;ids.push(id);}
+  var s=String(r[0]||'').toUpperCase();
+  if(COINS[s]&&!seen[s]){seen[s]=1;syms.push(s);}
  });
- if(!ids.length)return Promise.resolve(0);
- rateBusy=true;
- return fetch('https://api.coingecko.com/api/v3/simple/price?ids='+ids.join(',')+'&vs_currencies=usd,idr',
-   {cache:'no-store'})
- .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
- .then(function(j){
-  var n=0;
-  S.rates.forEach(function(r){
-   var id=COINS[String(r[0]||'').toUpperCase()];
-   var v=id&&j[id]?tidyRate(num(j[id].usd)):0;
-   if(v&&v!==r[1]){r[1]=v;n++;}
+ if(!syms.length)return Promise.resolve(0);
+ /* ratePend is the in-flight round: one at a time, and it always settles */
+ ratePend=feedGecko(syms)['catch'](function(){return null;}).then(function(a){
+  var got={usd:{},idr:0,src:[]},k;
+  if(a){for(k in a.usd)got.usd[k]=a.usd[k];got.idr=a.idr;got.src.push(a.src);}
+  var miss=syms.filter(function(s){return !(num(got.usd[s])>0);});
+  if(!miss.length&&got.idr>0)return got;
+  return feedCoinbase(miss,!(got.idr>0))['catch'](function(){return null;}).then(function(b){
+   if(b){
+    var hit=false;
+    miss.forEach(function(s){if(num(b.usd[s])>0){got.usd[s]=b.usd[s];hit=true;}});
+    if(!(got.idr>0)&&b.idr>0){got.idr=b.idr;hit=true;}
+    if(hit)got.src.push(b.src);
+   }
+   return got;
   });
-  var idr=j.tether&&num(j.tether.idr);
-  if(idr>1000&&Math.round(idr)!==S.idr){S.idr=Math.round(idr);n++;}
-  S.rateAt=Date.now();rateBusy=false;save();
-  if($('#ovForm').classList.contains('on')){
-   /* the form is open: only refresh the box if it still holds what we put there */
-   if(!editId&&$('#fRate').value===ratePrefill){autoRate();calc();}
-  }else{fillStatic();render();}
-  if($('#ovPanel').classList.contains('on')&&panel==='set')repaint();
+ }).then(function(got){
+  /* nothing came back from either feed: that is a failure, not an update */
+  var any=false,k;
+  for(k in got.usd){if(num(got.usd[k])>0){any=true;break;}}
+  if(!any&&!(got.idr>0))throw new Error('no prices');
+  var n=applyPrices(got);
+  S.rateAt=Date.now();S.rateSrc=got.src.join(' + ');
+  rateErr=0;rateFails=0;rateNext=0;
+  ratePend=null;
+  save();
+  paintRates(true);
   return n;
- })['catch'](function(){rateBusy=false;return -1;});
+ })['catch'](function(){
+  rateErr=Date.now();
+  rateNext=Date.now()+FEED_BACK[Math.min(rateFails,FEED_BACK.length-1)];
+  rateFails++;
+  ratePend=null;
+  /* no save(): a feed that did not answer is not a change to the book */
+  paintRates(false);
+  return -1;
+ });
+ return ratePend;
+}
+/* The amount is typed in coin and the line under it is in dollars, so that
+   line is only true while the price behind it is. Keep it moving for as long
+   as the form is on screen — and stop the moment it closes or the app is put
+   away, because a backgrounded tab quietly polling a feed is how a free
+   endpoint starts refusing this device. */
+function rateWatch(on){
+ if(rateTick){clearInterval(rateTick);rateTick=null;}
+ if(!on)return;
+ rateTick=setInterval(function(){
+  if(!S.rateAuto||editId||!$('#ovForm').classList.contains('on')){rateWatch(false);return;}
+  if(document.visibilityState==='hidden')return;
+  fetchRates();
+ },RATE_TICK);
 }
 var RATE_STALE=864e5;   /* a day */
 /* Logging the same deal twice is easy when you cannot remember whether you
@@ -1920,15 +2089,23 @@ function dupHint(){
    esc(tokf(num(t.amt))+' '+t.tok)+' on '+esc(dmy(t.date))+
    '. Save again only if this really happened twice.';
 }
+/* The rate box is the one number in this form the app filled in by itself, and
+   the dollar value of the deal is that number times the amount. So it says
+   where it came from and how old it is, every time — a price presented with
+   no provenance is how ETH 3000 gets into the books. */
 function rateHint(){
- var el=$('#rateHint'),msg='';
+ var el=$('#rateHint'),msg='',live=false;
  /* only worth saying for a new entry, on a coin the feed actually covers */
  if(!editId&&S.rateAuto&&COINS[String(fTokV).toUpperCase()]){
-  var at=num(S.rateAt);
-  if(!at)msg='Live prices haven’t been checked yet.';
-  else if(Date.now()-at>RATE_STALE)msg='This price was last checked '+relTime(at)+'.';
+  var at=priceAt(fTokV),age=at?Date.now()-at:-1;
+  if(age<0)msg='No live '+fTokV+' price yet — the figure below is a starting value. Check it before saving.';
+  else if(rateErr)msg='The price feed is not answering. This '+fTokV+' price is from '+relTime(at)+'.';
+  else if(age>RATE_STALE)msg='This '+fTokV+' price was last checked '+relTime(at)+'.';
+  else if(age>RATE_HINT)msg='This '+fTokV+' price was checked '+relTime(at)+'.';
+  else{live=true;msg='Live '+fTokV+' price · '+relTime(at)+'.';}
  }
  el.classList.toggle('hide',!msg);
+ el.classList.toggle('ok',live);
  if(msg)el.innerHTML=esc(msg)+' <button type="button" data-rate="now">Refresh</button>';
 }
 function autoRate(){
@@ -2015,10 +2192,11 @@ function openForm(t){
  syncPre();syncBrandPick();togglePct();
  calc();
  $('#ovForm').classList.add('on');
- if(!t)fetchRates();
+ /* editing an old entry keeps its locked rate (rule 1) — nothing to fetch */
+ if(!t){fetchRates();rateWatch(true);}
  setTimeout(function(){var a=$('#fAmt');a.focus();if(a.select)a.select();},70);
 }
-function closeForm(){$('#ovForm').classList.remove('on');editId=null;}
+function closeForm(){$('#ovForm').classList.remove('on');editId=null;rateWatch(false);}
 function commit(){
  var date=$('#fDate').value;
  if(!date){toast('Pick a date first');return false;}
@@ -2073,6 +2251,10 @@ $$('#seg button').forEach(function(b){b.onclick=function(){
 $('#toks').addEventListener('click',function(e){
  var b=e.target.closest('[data-tok]');if(!b)return;
  fTokV=b.dataset.tok;syncTok();autoRate();calc();
+ /* the coin just changed: the price that matters is this one's, and it may
+    be older than the one the form opened on. Throttled, so tapping along the
+    row of chips is still one call. */
+ fetchRates();
 });
 $('#chainPick').addEventListener('click',function(e){
  var b=e.target.closest('[data-ch]');if(!b)return;
@@ -3135,11 +3317,17 @@ function setHtml(){
     '<button data-rm="'+k+'" data-i="'+i+'" aria-label="Remove">\u2715</button></div>';}).join('')+
    '<button class="bs" data-push="'+k+'" style="margin-top:4px;font-size:12.5px;padding:8px 14px">+ Add row</button>';
  }
+ /* Which feed answered, and when. When one is refusing this device that is
+    the only place the owner can find out, and it is the first thing to look
+    at when a price on the form looks wrong. */
  var stamp=S.rateAuto
-  ?(S.rateAt?'Checked '+relTime(num(S.rateAt)):'Not checked yet \u2014 opens the feed on the next entry')
+  ?(S.rateAt?('Checked '+relTime(num(S.rateAt))+(S.rateSrc?' \u00b7 '+S.rateSrc:'')
+     +(rateErr?' \u00b7 the last check failed':''))
+   :(rateErr?'Could not reach the price feed \u2014 trying again shortly'
+     :'Not checked yet \u2014 opens the feed on the next entry'))
   :'Off \u2014 the prices below stay exactly as you set them';
  return'<div class="sec"><h3>Token prices \u00b7 USD per coin</h3>'+
-  '<p class="tiny">Prefills the rate when you log an entry. You can override it per entry \u2014 the USD value locks to the transaction date, so today\u2019s price never changes old records.</p>'+
+  '<p class="tiny">Prefills the rate when you log an entry, refreshed while the form is open. You can override it per entry \u2014 the USD value locks to the transaction date, so today\u2019s price never changes old records.</p>'+
   '<div class="kv"><span>Update prices automatically<div class="s">'+esc(stamp)+'</div></span>'+
    '<label class="sw"><input type="checkbox" id="pAuto"'+(S.rateAuto?' checked':'')+'><i></i></label></div>'+
   (S.rateAuto?'<div class="wrapb" style="margin:12px 0 2px"><button class="bs" data-rate="now">Refresh prices now</button></div>':'')+
@@ -3671,7 +3859,12 @@ document.addEventListener('visibilitychange',function(){
  /* Coming back is the moment the other device's work is most likely waiting.
     Pull here too, not only through startApp — otherwise a phone with no
     access code set never picks anything up until it is edited. */
- if(document.visibilityState==='visible'&&!$('#gate').classList.contains('on'))syncNow(true);
+ if(document.visibilityState==='visible'&&!$('#gate').classList.contains('on')){
+  syncNow(true);
+  /* and the prices are as old as the time away — an app picked back up an
+     hour later must not price a deal off the quote it was left on */
+  fetchRates();
+ }
  if(!S.lockHash)return;
  if(document.visibilityState==='hidden'){
   hidAt=Date.now();

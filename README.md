@@ -306,10 +306,20 @@ M/W toggle and period nav work, `"2.5 bnb"` parses to 2.5 BNB with the USD locke
 at the entry's rate, and an offline relaunch still shows the ledger — with no
 console errors anywhere.
 
-`rates.mjs` (15 checks) covers the live price feed: prices land, stablecoin
+`rates.mjs` (30 checks) covers the live price feed: prices land, stablecoin
 wobble pins to 1, USD→IDR follows, the call is throttled, the switch and the
 manual refresh work — and, the one that matters most, **entries already in the
 books keep the rate and USD they were saved with**.
+
+The rest of it is about the price the form offers being the price *now*, and
+each section is a way the old build got that wrong without saying so: a feed
+that answers with a coin missing (that coin must not be stamped as checked), a
+feed that refuses outright (the standby carries it), a request that never comes
+back (an 8-second deadline, or prices freeze for the life of the page) and a
+coin chip that never asked the feed at all. It takes about a minute — a backoff
+and a deadline are only worth testing in wall-clock time. Both feeds are
+stubbed, and the standby is unreachable unless a suite asks for it, so no test
+ever touches the real internet.
 
 `features.mjs` (41 checks) covers the six later additions: the stale-price hint,
 the backup reminder and its download, auto-lock across all three grace settings,

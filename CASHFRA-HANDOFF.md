@@ -40,7 +40,8 @@ S = {
   pkgs:[['Xpress Listing',0],...],        // money-in quick buttons; price 0 = user types amount
   team:[['Michael',15],['Shiller 1',10]], // name + default commission %
   rates:[['SOL',190],...], chains:[...], idr:16300,
-  rateAuto:true, rateAt:0,                 // live prices: on/off + last check (ms)
+  rateAuto:true, rateAt:0,                 // live prices: on/off + last round that came back (ms)
+  rateEach:{SOL:1757…}, rateSrc:'CoinGecko',// when each coin's own price arrived, and which feed answered
   bkAt:0,                                  // last backup taken (ms) — drives the reminder
   goal:0,                                  // monthly money-in target, 0 = card hidden
   caps:[['Tip shiller',5],...],            // spending ceiling per category, % of money in
@@ -133,7 +134,30 @@ VPS before a deploy. Nothing here ships to the server.
 - The notch and the home indicator are read through `--sat` / `--sab`, defined once on `:root` from `env(safe-area-inset-*)`. Use those variables, never `env()` inline — a test can set a variable and cannot set an env(), and this shipped broken precisely because nothing could check it. Watch the phone media query especially: it once re-declared `.app{padding:0 14px 138px}` and silently undid the fix on the only screens that needed it.
 - Tappable controls carry `touch-action:manipulation`; without it iOS Safari reads a fast six-digit code entry as double-tap-to-zoom. Pinch zoom is untouched.
 - Leaving the app always covers the screen (so the Android app-switcher snapshot is safe); `lockIdle` only decides whether the code is asked for again on return.
-- Live prices come from CoinGecko's free endpoint, at most once every 30 min, and fail silently when offline — the last known prices stay. Only symbols in the `COINS` map are looked up; anything else stays manual.
+- Live prices come from **two** feeds: CoinGecko answers for every coin and the
+  USD→IDR rate in one call, and Coinbase is the standby, asked only for what
+  CoinGecko could not answer. Neither needs a key. A price is reused for 30 s;
+  past that the app asks again when the entry form opens, when the coin chip
+  changes, every 35 s for as long as the form is on screen, and when the app is
+  brought back to the foreground. Every request carries an 8-second deadline —
+  a race, not only an abort, so the round settles even if the request does not.
+  A failed round backs off (10 s, 1 min, 3 min, 10 min) instead of hammering a
+  feed that is refusing this device, and writes nothing: the last known prices
+  stay, and the form says so. Only symbols in the `COINS` map are looked up;
+  anything else stays manual.
+- **Freshness is per coin.** `S.rateEach[symbol]` is when that coin's price last
+  actually arrived; `S.rateAt` is the last round that came back, and a coin's
+  age is never counted as newer than that. This exists because a feed's usual
+  failure is not a clean one — it is an answer with coins missing from it, and
+  one timestamp for every coin turned that into "checked just now" for a price
+  nobody had. The rate box says which of the three it is on every entry: live
+  and how old, stale and how old, or never checked on this device (the seed
+  numbers — SOL 190, ETH 3000 — are starting values, not quotes).
+- Prices ride along with the other settings when devices sync, and a device
+  that has been in a drawer for a week writes last just as easily as one used
+  this morning. So `rateEach`/`rateAt` are cleared whenever `rates` arrives
+  from the other side: they are numbers from somewhere else, not a check this
+  device made, and the next form asks the feed again.
 - The mix donuts hand out six colour slots by an entity's position in `CATS.in` / `S.chains`, never by rank. Anything past the sixth folds into one grey "Other".
 - IDR display rate follows the price feed while auto-update is on (it rides on `tether.idr`); switch auto off in Settings to pin it by hand.
 - **The access code IS the login.** `tokenFromCode()` in the app and the `node -e` block in `deploy/vps-sync-setup.sh` must stay identical — same salt (`cashfra-sync-v1`), same 200,000 rounds, same SHA-256. If they ever drift, ALFA is locked out of his own book with both sides looking correct; `test/code-login.mjs` compares them for exactly that reason.
