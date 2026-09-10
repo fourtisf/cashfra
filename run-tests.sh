@@ -26,7 +26,16 @@ run() {
   else
     fail=1
     printf '  FAIL  %-12s\n' "$name"
-    grep -E '  (FAIL|CRASH)  ' "$out" | sed 's/^/      /'
+    if grep -qE '  (FAIL|CRASH)  ' "$out"; then
+      grep -E '  (FAIL|CRASH)  ' "$out" | sed 's/^/      /'
+    else
+      # It exited non-zero without reporting a failed check, so it died before
+      # it could — a crash, a bad import, a browser that would not start. The
+      # grep printed nothing at all for that, which is a failure you cannot
+      # act on; the last lines of its output are all there is to go on.
+      echo "      (no check failed \u2014 the suite itself died. last lines:)"
+      tail -8 "$out" | sed 's/^/      /'
+    fi
   fi
 }
 

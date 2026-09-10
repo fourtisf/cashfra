@@ -262,8 +262,19 @@ const held = (await ledger(A)).tx.length;
 await A.page.evaluate(() => { window.__armed = 1; window.__log = []; });
 const racedMsg = (await syncStatus(A, 1))[0];
 const log = await A.page.evaluate(() => window.__log);
-check(log.length === 4 && /PUT -> 409/.test(log[1]) && /PUT -> 200/.test(log[3]),
+/* What matters is the shape of the exchange, not how many requests happened
+   to fall inside the window: a save elsewhere in the app (a price fetch is
+   one) can land its own debounced push here, and asserting log.length made
+   that unrelated push read as a sync failure. So: refused exactly once,
+   re-read, pushed again, and the retry carried the same book. */
+const i409 = log.findIndex(l => /PUT -> 409/.test(l));
+const tail = log.slice(i409 + 1);
+const txOf = l => Number((/tx=(\d+)/.exec(l || '') || [])[1]);
+check(i409 === 1 && log.filter(l => /-> 409/.test(l)).length === 1 &&
+      /GET -> 200/.test(tail[0] || '') && /PUT -> 200/.test(tail[1] || ''),
       `refused once, then carried through on the same exchange (${log.join(' | ')})`);
+check(txOf(log[i409]) === txOf(tail[1]) && txOf(tail[1]) > 0,
+      `and the retry pushed the same book, nothing dropped on the way (${txOf(log[i409])} -> ${txOf(tail[1])})`);
 check(/^Synced/.test(racedMsg), `and it reads as synced, not as an error (${racedMsg})`);
 const after = await A.page.evaluate(async ([u, t]) => {
   const r = await fetch(u, { headers: { 'X-Cashfra-Token': t } });

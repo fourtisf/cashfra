@@ -187,6 +187,51 @@ check(/\$/.test(await page.locator('#net').textContent()), 'hero renders offline
 await page.screenshot({ path: process.env.SHOT || join(tmpdir(), 'cashfra-offline.png') });
 await ctx.setOffline(false);
 
+// ── the bottom tab bar ────────────────────────────────────────────────────
+/* The app was one screen with everything else behind a gear. These are the
+   four things a tab bar has to get right: it goes where it says, it says
+   where you are, Home means no page open, and it gets out of the way of a
+   sheet that is a task rather than a page. */
+const navState = async () => page.evaluate(() => ({
+  tabs: [...document.querySelectorAll('#nav [data-nav]')].map(b => b.dataset.nav),
+  on: [...document.querySelectorAll('#nav [data-nav].on')].map(b => b.dataset.nav),
+  away: document.getElementById('nav').classList.contains('away'),
+  open: document.getElementById('ovPanel').classList.contains('on'),
+  title: document.getElementById('pTitle').textContent.trim()
+}));
+let n = await navState();
+check(n.tabs.join(',') === 'home,ins,mix,menu', `every section has a slot: ${n.tabs.join(', ')}`);
+check(n.on.join(',') === 'home' && !n.open, 'and Home is where you start, with no page over it');
+check(await page.locator('#nav #addBtn2').count() === 1, 'New entry keeps the middle of the bar');
+
+for (const [tab, title] of [['mix', 'Package & chain'], ['ins', 'Insights'], ['menu', 'Menu']]) {
+  await page.click(`#nav [data-nav="${tab}"]`);
+  await page.waitForTimeout(350);
+  n = await navState();
+  check(n.open && n.title === title && n.on.join(',') === tab,
+        `${tab} opens ${title} and lights its own tab (on: ${n.on.join(',') || 'none'})`);
+}
+await page.click('#nav [data-nav="home"]');
+await page.waitForTimeout(350);
+n = await navState();
+check(!n.open && n.on.join(',') === 'home', 'Home closes the page rather than opening one of its own');
+
+/* a hero chip is not a tab, and must not light one */
+await page.click('.hc[data-panel="shill"]');
+await page.waitForTimeout(350);
+n = await navState();
+check(n.open && n.on.length === 0, `a page with no tab lights nothing rather than guessing (${n.title})`);
+await closePanel();
+
+/* the entry form owns the screen while it is up */
+await page.click('#addBtn2');
+await page.waitForSelector('#ovForm.on', { timeout: 3000 });
+await page.waitForTimeout(350);
+check((await navState()).away, 'the bar ducks out for the entry form');
+await page.click('#fX');
+await page.waitForTimeout(400);
+check(!(await navState()).away, 'and comes back when it closes');
+
 // ── nothing broke along the way ───────────────────────────────────────────
 check(errors.length === 0, `console errors: ${errors.length ? errors.join(' | ') : 'none'}`);
 check(failed.length === 0, `failed same-origin requests: ${failed.length ? failed.join(' | ') : 'none'}`);

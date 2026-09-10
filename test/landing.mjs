@@ -116,7 +116,12 @@ await m.waitForFunction(() => {
   /* where centring inside this box has to put the card */
   const want = gr.top + pt + Math.max(0, (gr.height - pt - pb - wr.height) / 2);
   return Math.abs(wr.top - want) < 1;
-}, null, { timeout: 5000 });
+}, null, { timeout: 15000 }).catch(() => {});
+/* Not fatal, and given real room. A container running several browsers can
+   take longer than five seconds to settle this, and a throw here killed the
+   whole suite — every check after it went unreported, and the output said
+   only "FAIL landing" with nothing under it. If it really has not settled the
+   two checks below say so themselves, which is the thing worth knowing. */
 const gate = await m.evaluate(() => {
   const g = document.getElementById('gate').getBoundingClientRect();
   const logo = document.querySelector('.glogo').getBoundingClientRect();
@@ -160,6 +165,32 @@ check(box.toastBottom <= box.btnTop + 1,
       `the toast sits above the button, not on it (ends ${Math.round(box.toastBottom)}, button starts ${Math.round(box.btnTop)})`);
 check(box.h - box.btnBottom >= 34,
       `and the button clears the home indicator (${Math.round(box.h - box.btnBottom)}px below it)`);
+
+/* The tab bar's height is measured at runtime and written back to --navh,
+   which the page bottom, the toast and the page sheet all key off. Writing it
+   back as plain pixels froze the home-indicator gap at whatever it was when
+   the measurement ran: change the inset afterwards and the bar grew while
+   --navh did not, so the toast came down onto the + button. It has to stay a
+   calc() over var(--sab). */
+const navh = await m.evaluate(() => {
+  /* measured off --navh itself, not off the bar: the bar's own padding
+     carries var(--sab) and grows either way, so watching it would pass even
+     with --navh frozen — which is the bug */
+  const root = document.documentElement;
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;height:var(--navh)';
+  document.body.appendChild(probe);
+  const was = root.style.getPropertyValue('--sab');
+  root.style.setProperty('--sab', '0px');
+  const flatH = probe.getBoundingClientRect().height;
+  root.style.setProperty('--sab', '34px');
+  const notchedH = probe.getBoundingClientRect().height;
+  probe.parentNode.removeChild(probe);
+  root.style.setProperty('--sab', was || '34px');
+  return { flatH: Math.round(flatH), grew: Math.round(notchedH - flatH) };
+});
+check(navh.grew === 34 && navh.flatH > 0,
+      `the reserved bar height still follows the inset (${navh.flatH}px flat, +${navh.grew}px with a home bar)`);
 
 /* a full-height sheet starts just below where a notch ends; "just below" is
    not clearance, and its close button is the first thing a thumb reaches for */

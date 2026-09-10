@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-09-10-12">
+<meta name="cashfra-build" content="2026-09-10-13">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -42,6 +42,10 @@
   --disp:ui-rounded,"SF Pro Rounded",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   --sh:0 1px 2px rgba(21,21,40,.05),0 10px 30px rgba(21,21,40,.07);
   --sh-sm:0 1px 2px rgba(21,21,40,.05),0 4px 14px rgba(21,21,40,.06);
+  /* how tall the bottom bar actually is — JS measures it and writes the real
+     number back here, so the page bottom, the toast and the sheets all clear
+     it without three separate guesses drifting apart */
+  --navh:calc(70px + var(--sab));
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html{-webkit-text-size-adjust:100%}
@@ -57,7 +61,7 @@ button,label.sw,.row,.gk{cursor:pointer;-webkit-tap-highlight-color:transparent;
 .pos{color:var(--in)} .neg{color:var(--out)}
 .hide{display:none!important}
 
-.app{max-width:640px;margin:0 auto;padding:var(--sat) 18px calc(132px + var(--sab))}
+.app{max-width:640px;margin:0 auto;padding:var(--sat) 18px calc(var(--navh) + 16px)}
 
 /* ── header ── */
 .hd{display:flex;align-items:center;justify-content:space-between;padding:20px 2px 16px}
@@ -167,12 +171,43 @@ button,label.sw,.row,.gk{cursor:pointer;-webkit-tap-highlight-color:transparent;
 .bt.red{color:var(--out)}
 .bt.red:hover{background:var(--out-soft)}
 
-.stick{position:fixed;left:0;right:0;bottom:0;padding:12px 18px calc(14px + var(--sab));background:linear-gradient(180deg,rgba(244,244,248,0),var(--bg) 42%);z-index:40;display:flex;justify-content:center;pointer-events:none}
-.stick .bp{width:100%;max-width:604px;padding:15px;font-size:15.5px;pointer-events:auto;text-align:center}
+/* ── bottom tab bar ──
+   The app was one screen with everything else behind a gear: every page cost
+   a tap into a menu and a read of the list, and there was nothing on screen
+   saying where you were. Five slots, always visible, and New entry keeps the
+   middle because it is still the thing done most.
+
+   z-index sits ABOVE the panel sheets on purpose — a tab bar you have to
+   close a page to reach is not a tab bar. It ducks out of the way for the
+   sheets that are a task rather than a page (the entry form, the brand
+   picker); navSync does that from one MutationObserver rather than from
+   every open and close site. */
+.stick{position:fixed;left:0;right:0;bottom:0;z-index:120;
+  padding:7px 6px calc(8px + var(--sab));
+  /* no backdrop-filter: at 97% it buys nothing you can see, and it costs a
+     compositing pass on every frame for a bar that is always on screen —
+     enough, on a loaded machine, to keep the lock screen's layout from
+     settling before it is measured */
+  background:rgba(255,255,255,.97);
+  border-top:1px solid var(--line);box-shadow:0 -6px 22px rgba(21,21,40,.05);
+  display:flex;align-items:center;justify-content:space-around;gap:2px;
+  transition:transform .22s cubic-bezier(.2,.9,.3,1)}
+.stick.away{transform:translateY(110%)}
+.nv{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:6px 2px;border-radius:14px;color:var(--faint);font-size:10.5px;font-weight:700;
+  letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nv .ni{font-size:19px;line-height:1.05;filter:grayscale(1);opacity:.5;transition:.15s}
+.nv.on{color:var(--brand-ink)}
+.nv.on .ni{filter:none;opacity:1}
+.nv:active{transform:scale(.93)}
+.stick .bp{flex:none;width:54px;height:54px;border-radius:19px;padding:0;font-size:26px;
+  font-weight:500;line-height:1;display:grid;place-items:center;margin:0 4px}
 
 /* ── sheets ── */
 .ov{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(21,21,32,.42);backdrop-filter:blur(4px);z-index:100;display:none;align-items:center;justify-content:center;padding:22px}
 .ov.on{display:flex}
+/* only the page sheet leaves room — the bar hides itself for the others */
+#ovPanel{padding-bottom:var(--navh)}
 .sheet{background:var(--card);border-radius:26px;width:100%;max-width:520px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(21,21,40,.3);animation:pop .22s cubic-bezier(.2,.9,.3,1)}
 @keyframes pop{from{opacity:0;transform:translateY(16px) scale(.985)}}
 .grab{display:none;width:40px;height:4px;border-radius:2px;background:var(--line2);margin:10px auto 0}
@@ -527,18 +562,20 @@ body.locked{overflow:hidden}
  .gnote{margin-top:12px}
 }
 
-.toast{position:fixed;left:50%;bottom:calc(96px + var(--sab));transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;border-radius:16px;padding:12px 16px 12px 18px;font-size:13.5px;font-weight:600;z-index:200;opacity:0;pointer-events:none;transition:.22s cubic-bezier(.2,.9,.3,1);display:flex;align-items:center;gap:16px;max-width:calc(100vw - 36px);box-shadow:0 12px 34px rgba(21,21,40,.3)}
+.toast{position:fixed;left:50%;bottom:calc(var(--navh) + 16px);transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;border-radius:16px;padding:12px 16px 12px 18px;font-size:13.5px;font-weight:600;z-index:200;opacity:0;pointer-events:none;transition:.22s cubic-bezier(.2,.9,.3,1);display:flex;align-items:center;gap:16px;max-width:calc(100vw - 36px);box-shadow:0 12px 34px rgba(21,21,40,.3)}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
 .toast button{color:#B9AFFF;font-weight:700;font-size:13px;white-space:nowrap}
 
 @media(max-width:600px){
-  .app{padding:var(--sat) 14px calc(138px + var(--sab))}
+  .app{padding:var(--sat) 14px calc(var(--navh) + 16px)}
   .hnet{font-size:38px}
   .seh{flex-wrap:wrap}
   .srch{width:100%;max-width:none;order:3;margin-top:10px}
   .ov{padding:0;align-items:flex-end}
   /* 94vh starts a hair below a notch and a hair is not clearance */
   .sheet{max-width:100%;max-height:calc(94vh - var(--sat));border-radius:26px 26px 0 0;animation:up .24s cubic-bezier(.2,.9,.3,1)}
+  #ovPanel{padding:0 0 var(--navh)}
+  #ovPanel .sheet{max-height:calc(94vh - var(--sat) - var(--navh))}
   @keyframes up{from{transform:translateY(30px)}}
   .grab{display:block}
   .two{grid-template-columns:1fr}
@@ -594,7 +631,13 @@ body.locked{overflow:hidden}
   <div id="list"></div>
 </div>
 
-<div class="stick"><button class="bp" id="addBtn2">+ New entry</button></div>
+<nav class="stick" id="nav" aria-label="Sections">
+  <button class="nv" data-nav="home"><span class="ni">🏠</span>Home</button>
+  <button class="nv" data-nav="ins"><span class="ni">📊</span>Insights</button>
+  <button class="bp" id="addBtn2" aria-label="New entry" title="New entry">+</button>
+  <button class="nv" data-nav="mix"><span class="ni">🍩</span>Packages</button>
+  <button class="nv" data-nav="menu"><span class="ni">⚙️</span>More</button>
+</nav>
 
 <!-- form sheet -->
 <div class="ov" id="ovForm">
@@ -2491,7 +2534,7 @@ $('#fAgain').onclick=function(){
 };
 
 /* panel */
-var TITLES={menu:'Menu',com:'Commission',ins:'Insights',cli:'Clients',shill:'Shill team',set:'Settings',data:'Your data'};
+var TITLES={menu:'Menu',com:'Commission',ins:'Insights',mix:'Package & chain',cli:'Clients',shill:'Shill team',set:'Settings',data:'Your data'};
 function openPanel(w){
  panel=w||'menu';
  if(panel!=='cli')cliOpen='';
@@ -2506,6 +2549,7 @@ function repaint(){$('#pBody').innerHTML=panelHtml();}
 function panelHtml(){
  if(panel==='com')return teamOpen?oneTeamHtml():comHtml();
  if(panel==='ins')return insHtml();
+ if(panel==='mix')return mixHtml();
  if(panel==='cli')return cliOpen?oneCliHtml():cliHtml();
  if(panel==='shill')return shillOpen?oneShillHtml():shillHtml();
  if(panel==='set')return setHtml();
@@ -2518,6 +2562,10 @@ function panelHtml(){
  }
  return'<div style="padding:4px 0 10px">'+
   mi('\ud83d\udcca','#E7F0FF','Insights','Where the money goes','ins')+
+  mi('\ud83c\udf69','#F3E8FF','Package & chain',(function(){
+   var g=mixRows(periodTx(0),function(t){return t.chain;},S.chains,true),top=g.rows[0];
+   return top?('Mostly '+top.k+' '+'\u00b7 '+top.d+' of '+g.tot+(g.tot===1?' listing':' listings')):'Where the listings land';
+  })(),'mix')+
   mi('\ud83d\udcb8','var(--amber-soft)','Commission',(t.due?usdc(t.due)+' still owed':'All settled'),'com')+
   mi('\ud83d\udce3','#FFEFE2','Shill team',(function(){
    var rs=shillRows(),d=0;rs.forEach(function(o){d+=o.d;});
@@ -2824,6 +2872,49 @@ function mixList(g){
    '<span class="pc">'+Math.round(x.p)+'%</span></div>';
  }).join('');
 }
+function mixSegs(){
+ return'<div class="mseg"><button data-mix="per"'+(mixAll?'':' class="on"')+'>'+(per==='w'?'This week':'This month')+'</button>'+
+  '<button data-mix="all"'+(mixAll?' class="on"':'')+'>All time</button></div> '+
+  '<div class="mseg"><button data-mixby="v"'+(mixByD?'':' class="on"')+'>Money</button>'+
+  '<button data-mixby="d"'+(mixByD?' class="on"':'')+'>Listings</button></div>';
+}
+/* The answer before the picture. "Which chain do most of my listings land on"
+   is a sentence, and a donut is not one — you still have to read the legend
+   and compare two numbers to get there. This says it outright, and the donut
+   below is then the detail rather than the finding. */
+function mixLead(g,label){
+ var top=g.rows[0];if(!top)return'';
+ return'<div class="kv"><span>'+label+'<div class="s">'+
+  (g.byD?top.d+' of '+g.tot+(g.tot===1?' listing':' listings')
+        :usdc(top.v)+' of '+usdc(g.tot))+'</div></span>'+
+  '<b>'+esc(top.k)+' '+Math.round(top.p)+'%</b></div>';
+}
+/* Its own screen. Buried at the far end of Insights it answered a question
+   nobody scrolled far enough to ask, and it opened on money, which is not the
+   question ALFA was asking of it. */
+function mixHtml(){
+ var list=mixAll?sc(S.tx.filter(inScope),null):periodTx(0);
+ var mp=mixRows(list,function(t){return t.cat;},CATS['in'],mixByD);
+ var mc=mixRows(list,function(t){return t.chain;},S.chains,mixByD);
+ if(!mp.rows.length)
+  return'<p class="tiny" style="padding:6px 0 16px">Nothing '+(mixAll?'logged yet':'in '+esc(perLabel(0)))+
+   (brandView?' for '+esc(brandView):'')+'. Log a listing and the split appears here \u2014 automatically.</p>'+
+   '<div style="padding-bottom:10px">'+mixSegs()+'</div>';
+ return'<p class="tiny">'+(mixByD
+   ?'Where the listings land \u2014 how the work is spread, paid for yet or not.'
+   :'Where the money comes from \u2014 share of what you actually received.')+'</p>'+
+  '<div style="padding:8px 0 2px">'+mixSegs()+'</div>'+
+  '<div class="sec" style="padding-top:6px">'+
+   mixLead(mc,mixByD?'Most listings on':'Most money from')+
+   mixLead(mp,mixByD?'Most common package':'Top package')+
+  '</div>'+
+  '<div class="mixh">By package</div>'+donut(mp)+mixList(mp)+
+  (mc.rows.length?'<div class="mixh">By chain</div>'+donut(mc)+mixList(mc):'')+
+  '<p class="tiny" style="padding:16px 0 4px">'+
+   (mixByD?'Counting listings counts the ones not paid for yet \u2014 they still happened.'
+          :'Money counts only what arrived. A listing still owed is not in here.')+
+  '</p>';
+}
 function mixBlock(list){
  var mp=mixRows(list,function(t){return t.cat;},CATS['in'],mixByD);
  var mc=mixRows(list,function(t){return t.chain;},S.chains,mixByD);
@@ -2833,10 +2924,7 @@ function mixBlock(list){
    ?'How many listings each package and chain accounts for — how the work is spread, paid for yet or not.'
    :'Share of the money you actually received — which package earns it and which chain it came in on.')+
   ' Works itself out from your entries.</p>'+
-  '<div class="mseg"><button data-mix="per"'+(mixAll?'':' class="on"')+'>'+(per==='w'?'This week':'This month')+'</button>'+
-  '<button data-mix="all"'+(mixAll?' class="on"':'')+'>All time</button></div> '+
-  '<div class="mseg"><button data-mixby="v"'+(mixByD?'':' class="on"')+'>Money</button>'+
-  '<button data-mixby="d"'+(mixByD?' class="on"':'')+'>Listings</button></div>'+
+  mixSegs()+
   '<div class="mixh">By package</div>'+donut(mp)+mixList(mp)+
   (mc.rows.length?'<div class="mixh">By chain</div>'+donut(mc)+mixList(mc):'')+
   '</div>';
@@ -3843,6 +3931,73 @@ $('#pBack').onclick=function(){
 };
 $('#pX').onclick=function(){$('#ovPanel').classList.remove('on');};
 $('#pClose').onclick=function(){$('#ovPanel').classList.remove('on');};
+
+/* ── bottom tab bar ──────────────────────────────────────────────────────
+   Home is "no page open", which is why it is not a panel: closing the sheet
+   IS going home, and giving it one would have meant a second idea of where
+   you are that could disagree with the first. */
+/* --navh has to keep tracking --sab, so what gets written back is the bar's
+   own height with the safe area taken OUT and var(--sab) put back in. Freezing
+   the measured pixels instead looks right on the phone it was measured on and
+   drops the home-indicator gap the moment the inset changes — the toast then
+   lands on the + button, which is exactly what it did. --sab is env() and a
+   custom property computes to its token, not a length, so it is measured off
+   a throwaway node rather than parsed. */
+function sabPx(){
+ var d=document.createElement('div');
+ d.style.cssText='position:absolute;left:-9999px;top:0;visibility:hidden;height:var(--sab)';
+ document.body.appendChild(d);
+ var v=d.getBoundingClientRect().height;
+ d.parentNode.removeChild(d);
+ return v||0;
+}
+function navSize(){
+ var n=$('#nav');if(!n)return;
+ var h=n.getBoundingClientRect().height;
+ if(!h)return;
+ var core=Math.max(0,Math.round(h-sabPx()));
+ document.documentElement.style.setProperty('--navh','calc('+core+'px + var(--sab))');
+}
+function navSync(){
+ var n=$('#nav');if(!n)return;
+ /* a task, not a page: the entry form and the brand picker own the screen
+    while they are up, and the bar would sit on top of them */
+ n.classList.toggle('away',$('#gate').classList.contains('on')||
+  $$('.ov').some(function(o){
+   return o.id!=='ovPanel'&&o.classList.contains('on');
+  }));
+ var open=$('#ovPanel').classList.contains('on');
+ $$('#nav [data-nav]').forEach(function(b){
+  b.classList.toggle('on',open?(panel===b.dataset.nav):(b.dataset.nav==='home'));
+ });
+}
+$('#nav').addEventListener('click',function(e){
+ var b=e.target.closest('[data-nav]');if(!b)return;
+ var w=b.dataset.nav;
+ if(w==='home'){
+  $('#ovPanel').classList.remove('on');
+  window.scrollTo({top:0,behavior:'smooth'});
+ }else if(panel===w&&$('#ovPanel').classList.contains('on')){
+  $('#pBody').scrollTo({top:0,behavior:'smooth'});   /* tapping the tab you are on goes to its top */
+ }else openPanel(w);
+ navSync();
+});
+/* Every sheet toggles the same one class, so one observer keeps the bar in
+   step with all of them — including the ones opened from code paths that
+   have nothing to do with navigation. */
+(function(){
+ if(typeof MutationObserver!=='function')return;
+ var mo=new MutationObserver(navSync);
+ $$('.ov').concat([$('#gate')]).forEach(function(o){
+  if(o)mo.observe(o,{attributes:true,attributeFilter:['class']});
+ });
+})();
+/* Measured on load and on resize only. The bar's height does not depend on
+   which sheet is up, and running it from navSync put a forced layout on every
+   sheet open and close — enough, on a slow phone, to shove the debounced sync
+   push out of the window it was meant to land in. */
+addEventListener('resize',navSize);
+navSize();navSync();
 $('#ovPanel').onclick=function(e){if(e.target===this)this.classList.remove('on');};
 $('#q').addEventListener('input',function(){render();});
 
