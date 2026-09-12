@@ -26,6 +26,7 @@ documents the data model and the business rules that must not change.
 | `deploy/bootstrap.sh` | First time on a server: key, clone and deploy, in one run. |
 | `deploy/vps-setup.sh` | One-command deploy to an Ubuntu VPS, then checks the result. |
 | `deploy/vps-update.sh` | Pull the latest and redeploy, in one command. |
+| `deploy/install-command.sh` | Installs the `cashfra-deploy` command on the server, so a deploy is one word. |
 | `deploy/nginx.conf` | The nginx site it installs (certbot adds TLS to it). |
 | `deploy/sync-server.js` | Optional. ~90 lines of Node that hold one JSON blob per token, so several devices can share one ledger. |
 | `deploy/vps-sync-setup.sh` | Turns that on: service user, token, systemd unit, nginx `/sync`, then checks it. |
@@ -34,6 +35,7 @@ documents the data model and the business rules that must not change.
 | `bump-version.sh` | Bumps the service-worker cache name. Run before each deploy. |
 | `dev-server.py` | Local server that sends the production headers. |
 | `test/` | Browser checks for the app and for the deploy handover. |
+| `DEPLOY.md` | What the live site actually runs on, and the one command that updates it. |
 
 The 192 and 180 icons are the prototype's own artwork, extracted byte-for-byte
 from the data URIs. The 512 and maskable icons are redrawn from the same
@@ -41,6 +43,11 @@ geometry (0.2 corner radius, vertical `#7B6CFF → #4335CE`, white C) so they st
 crisp at size. The UI itself is untouched.
 
 ## Deploy
+
+**Already live and just need to ship a change?** [`DEPLOY.md`](DEPLOY.md) is
+the short version: which of these paths the site actually runs on, and the one
+command that updates it. The rest of this section is how each path is set up in
+the first place.
 
 ### Hostinger — cashfra.com
 
