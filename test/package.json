@@ -13,6 +13,7 @@
     "landing": "node landing.mjs",
     "rules": "node rules.mjs",
     "brands": "node brands.mjs",
+    "phone": "node phone.mjs",
     "sync": "node sync.mjs",
     "code-login": "node code-login.mjs",
     "deploy": "node update.mjs"

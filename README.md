@@ -271,7 +271,7 @@ Opening `index.html` over `file://` still works — the app falls back to
 
 ## Tests
 
-Ten Playwright suites, 287 checks, and one that needs no browser at all. They are for this repo only and never ship
+Thirteen Playwright suites, 478 checks, and one that needs no browser at all. They are for this repo only and never ship
 to the server. The price feed is always stubbed, so the suites are hermetic.
 
 ```sh
@@ -301,6 +301,7 @@ BASE=http://127.0.0.1:8123/ node test/rules.mjs
 BASE=http://127.0.0.1:8123/ node test/brands.mjs
 BASE=http://127.0.0.1:8123/ node test/shill.mjs
 BASE=http://127.0.0.1:8123/ node test/insights.mjs
+BASE=http://127.0.0.1:8123/ node test/phone.mjs
 
 node test/update.mjs                    # starts and tears down its own server
 node test/sync.mjs                      # and its own sync service
@@ -362,6 +363,25 @@ both through `--sat` / `--sab` rather than `env()` at each site, so the suite
 can set them and check that the header, the lock screen, a full-height sheet,
 the toast and the bottom button all move clear. A screenshot of one phone is
 not a test.
+
+`phone.mjs` (63 checks) walks every screen at 320px and at 390px — the home
+list, the entry form both ways with its details open, a deal with two
+commission lines and its invoice, the brand sheet, the menu and all seven
+panels, and a person, a client and a shiller opened from them — and fails if
+any of it is wider than the phone or reaches past its side padding. Settings
+shipped 406px wide on every phone that way: a grid track will not shrink below
+what an input asks for by default, so each row's ✕ sat off the screen.
+
+It also covers the iPhone, where a field with text under 16px makes the page
+zoom in on tap and stay zoomed, cut off at both sides — how the entry form
+looked on ALFA's phone. Fields are 16px only inside an
+`@supports (-webkit-touch-callout:none)` block, which exists in iOS's WebKit
+and nowhere else, so Chromium never applies it. The suite lifts the block's
+rules out and applies them itself, then checks that every field it walked is
+16px or more, that no text box changes size and no select grows by more than a
+few px, that the date field drops the native look WebKit resizes on its own,
+that Android and the desktop keep the approved sizes, and that pinch zoom is
+still allowed.
 
 `rules.mjs` (22 checks) covers the three guards that keep the book honest. A
 listing opens as *Paid in full*, and changing that by hand is answered with the

@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Cashfra">
 <meta name="robots" content="noindex,nofollow">
-<meta name="cashfra-build" content="2026-10-03-1">
+<meta name="cashfra-build" content="2026-10-26-1">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -420,7 +420,9 @@ button.kv:active{opacity:.6}
 .tiny{font-size:12.5px;color:var(--sub);line-height:1.6;margin-bottom:12px}
 .ed{display:grid;grid-template-columns:1fr 96px 32px;gap:7px;margin-bottom:8px}
 .ed.o{grid-template-columns:1fr 32px}
-.ed input{background:#F5F5F9;border-radius:12px;padding:10px 12px;font-size:13.5px;border:1.5px solid transparent}
+/* min-width:0, as .crow has it: a grid track will not shrink below what an
+   input asks for by default, and that put Settings' ✕ buttons off a phone */
+.ed input{background:#F5F5F9;border-radius:12px;padding:10px 12px;font-size:13.5px;border:1.5px solid transparent;min-width:0}
 .ed input:focus{outline:none;border-color:var(--brand);background:var(--card)}
 .ed input.nm{text-align:right;font-variant-numeric:tabular-nums}
 .ed button{color:var(--faint);border-radius:10px;font-size:13px}
@@ -602,6 +604,30 @@ body.locked{overflow:hidden}
   .toast{left:14px;right:14px;transform:translateY(20px);max-width:none}
   .toast.on{transform:translateY(0)}
   .row+.row::before{left:66px}
+}
+/* iPhone and iPad only: -webkit-touch-callout exists in WebKit's iOS build and
+   nowhere else, so Android and the desktop keep the approved sizes exactly.
+   iOS zooms the page in on any field whose text is under 16px the moment it is
+   focused, and leaves it zoomed after — the sheet then sits too large and cut
+   off at both sides, which is how ALFA's iPhone showed the entry form. So the
+   text in a field is 16px here, and its line is pinned to what 1.5 gave at the
+   old size, so a text box keeps its exact height. A select may still come out
+   a few px taller — some engines size it from its font and ignore the line —
+   and nothing else moves. maximum-scale=1 would have stopped the zoom too, and
+   taken pinch zoom with it in the installed app. A new field with smaller text
+   belongs in this list; test/phone.mjs fails until it is. */
+@supports (-webkit-touch-callout:none){
+  .fr input,.fr select,.fr textarea{font-size:16px;line-height:calc(14.5px * 1.5)}
+  .srch input,.crow input,.ed input{font-size:16px;line-height:calc(13.5px * 1.5)}
+  .usdline input,.ctc input{font-size:16px;line-height:calc(13px * 1.5)}
+  /* Left native, the date field is resized by WebKit itself: it swaps in its
+     own padding and forces content-box, so width:100% comes out as 100% plus
+     padding and border, wider than every field above it, and the sheet can be
+     dragged sideways. Without the native look it is sized like the rest and
+     still opens the iOS picker. The value centres itself unless told, and an
+     empty one has no height of its own, so it is given the line. */
+  .fr input[type=date]{-webkit-appearance:none;appearance:none}
+  .fr input[type=date]::-webkit-date-and-time-value{text-align:left;height:calc(14.5px * 1.5)}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
